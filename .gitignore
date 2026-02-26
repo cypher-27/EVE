@@ -1,0 +1,28 @@
+# === Secretos y Variables Sensibles ===
+# Este es el más importante: contiene tu API Token Secret
+*.tfvars
+*.tfvars.json
+auth.tf
+
+# === Archivos de Estado de Terraform ===
+# Estos archivos contienen la arquitectura actual de tu lab (y a veces secretos en texto plano)
+*.tfstate
+*.tfstate.backup
+*.tfstate.lock.info
+
+# === Directorios de Trabajo ===
+# Aquí se descargan los plugins (providers), no es necesario subirlos
+.terraform/
+.terraform.lock.hcl
+
+# === Llaves de Seguridad ===
+# Por si acaso generas llaves SSH dentro de la carpeta del proyecto
+*.pem
+*.key
+*.pub
+
+# === Archivos de Sistema ===
+.DS_Store
+Thumbs.db
+core
+
