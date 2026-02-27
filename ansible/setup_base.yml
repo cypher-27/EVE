@@ -1,0 +1,27 @@
+---
+- name: Configuración Base para Nodos EVE
+  hosts: eve_nodes
+  become: yes  # Ejecutar como sudo
+
+  tasks:
+    - name: Actualizar repositorios y sistema
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Instalar herramientas esenciales
+      apt:
+        name:
+          - curl
+          - git
+          - vim
+          - qemu-guest-agent
+          - htop
+        state: present
+
+    - name: Asegurar que el QEMU Guest Agent esté corriendo
+      systemd:
+        name: qemu-guest-agent
+        state: started
+        enabled: yes
+
