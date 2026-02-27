@@ -3,42 +3,50 @@
 resource "proxmox_vm_qemu" "test_server" {
   name        = "eve-test-01"
   target_node = "makima"
-  clone       = "debian13-template" # El nombre de tu template (ID 9000)
+  clone       = "debian13-template"
+  agent       = 1
 
-  # Configuración básica (puedes subirla si quieres, heredó 1GB/1C)
-  cores   = 1
+  boot        = "order=scsi0;ide2"
+
+  cpu {
+    cores   = 1
+    sockets = 1
+    type    = "host"
+  }
+
   memory  = 1024
-  agent   = 1
-
-  # Configuración de Disco
-  scsihw = "virtio-scsi-single"
+  scsihw  = "virtio-scsi-single"
   
   disks {
+    ide {
+      ide2 {
+        cloudinit {
+          storage = "local-zfs"
+        }
+      }
+    }
     scsi {
       scsi0 {
         disk {
-          size    = "20"
-          storage = "local-zfs"
+          size     = 20
+          storage  = "local-zfs"
           iothread = true
         }
       }
     }
   }
 
-  # Configuración de Red
   network {
+    id     = 0
     model  = "virtio"
     bridge = "vmbr0"
   }
 
-  # Cloud-Init (La magia de la automatización)
-  os_type = "cloud-init"
-  ipconfig0 = "ip=192.168.1.50/24,gw=192.168.1.1" # IP temporal de prueba
+  os_type   = "cloud-init"
+  ipconfig0 = "ip=192.168.1.50/24,gw=192.168.1.1"
   
-  # Usuario y llaves SSH (Terraform las inyecta por ti)
   ciuser     = "admin"
   sshkeys    = <<EOF
   ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM9kG6lsmZBCtkdYOAIZwNJ5foJRHrRItjpNlQYrX4zT admin@eve
   EOF
 }
-
