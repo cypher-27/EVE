@@ -43,7 +43,7 @@ resource "proxmox_vm_qemu" "test_server" {
   }
 
   os_type   = "cloud-init"
-  ipconfig0 = "ip=192.168.1.50/24,gw=192.168.1.1"
+  ipconfig0 = "ip=192.168.1.50/24,gw=192.168.1.254"
   
   ciuser     = "admin"
   sshkeys    = <<EOF
