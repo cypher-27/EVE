@@ -1,0 +1,48 @@
+#!/bin/bash
+# ==========================================
+# EVE GATEWAY - SDN FIREWALL (Ansible Managed)
+# ==========================================
+
+# Variables inyectadas por Ansible
+WG_IFACE="{{ wg_iface }}"
+ZT_IFACE="{{ zt_iface }}"
+LAN_IFACE="{{ lan_iface }}"
+LAN_SUBNET="{{ lan_subnet }}"
+RASP_LAN_IP="{{ rasp_lan_ip }}"
+
+# 1. Limpieza
+iptables -F
+iptables -X
+iptables -t nat -F
+iptables -t nat -X
+
+# 2. NAT
+iptables -t nat -A POSTROUTING -o $LAN_IFACE -j MASQUERADE
+
+# 3. Reglas INPUT (Seguridad de la Pi)
+iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A INPUT -i $ZT_IFACE -j ACCEPT
+iptables -A INPUT -p udp --dport 51820 -j ACCEPT
+iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -j DROP
+
+# 4. Reglas FORWARD (Reenvío)
+iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+# --- REGLAS DE ACCESO DINÁMICAS (Para WG y ZT) ---
+# Permitimos que tanto Wireguard como ZeroTier usen las reglas de la lista
+{% for rule in wg_tcp_rules %}
+iptables -A FORWARD -i $WG_IFACE -d {{ rule.ip }} -p tcp --dport {{ rule.port }} -j ACCEPT # {{ rule.desc }}
+iptables -A FORWARD -i $ZT_IFACE -d {{ rule.ip }} -p tcp --dport {{ rule.port }} -j ACCEPT # {{ rule.desc }} (Acceso ZT)
+{% endfor %}
+
+# Permitir PING desde ambas redes para que Terraform no se cuelgue
+iptables -A FORWARD -i $WG_IFACE -p icmp -j ACCEPT
+iptables -A FORWARD -i $ZT_IFACE -p icmp -j ACCEPT
+
+# Bloqueo total al resto de la LAN para ambas interfaces
+iptables -A FORWARD -i $WG_IFACE -d $LAN_SUBNET -j DROP
+iptables -A FORWARD -i $ZT_IFACE -d $LAN_SUBNET -j DROP
+
+echo "EVE Firewall: Reglas aplicadas por Ansible con éxito."
