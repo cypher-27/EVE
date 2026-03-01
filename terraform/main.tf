@@ -2,14 +2,12 @@
 
 # 1. Leer el Contrato Maestro (Single Source of Truth)
 locals {
-  # Cargamos el archivo YAML
   lab_state = yamldecode(file("../lab-state.yaml"))
   
-  # Filtramos SOLO las máquinas que tienen el estado "presente".
-  # Si cambias el estado a "ausente" en el YAML, Terraform la destruirá automáticamente.
+  # Filtramos: Solo estado "presente" Y que el tipo sea "vm"
   active_vms = {
     for env in local.lab_state.entornos : env.nombre => env
-    if env.estado == "presente"
+    if env.estado == "presente" && try(env.tipo, "vm") == "vm"
   }
 }
 
@@ -71,4 +69,3 @@ resource "proxmox_vm_qemu" "entorno" {
   ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM9kG6lsmZBCtkdYOAIZwNJ5foJRHrRItjpNlQYrX4zT admin@eve
   EOF
 }
-

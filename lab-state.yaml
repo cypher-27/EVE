@@ -1,6 +1,29 @@
 entornos:
+  # === NODOS CORE (Físicos / Proxmox) ===
+  - nombre: "makima-core"
+    estado: "presente"
+    tipo: "fisico"
+    red:
+      ip: "192.168.1.20/24"
+    firewall_externo:
+      - puerto: 8006
+        protocolo: "tcp"
+        descripcion: "GUI Makima"
+
+  - nombre: "reze-core"
+    estado: "presente"
+    tipo: "fisico"
+    red:
+      ip: "192.168.1.10/24"
+    firewall_externo:
+      - puerto: 8006
+        protocolo: "tcp"
+        descripcion: "GUI Reze"
+
+  # === MÁQUINAS VIRTUALES ===
   - nombre: "eve-test-01"
     estado: "presente"
+    tipo: "vm"
     nodo_proxmox: "makima"
     vmid: 100
     plantilla: "debian13-template"
@@ -14,4 +37,3 @@ entornos:
       - puerto: 22
         protocolo: "tcp"
         descripcion: "SSH Admin"
-
