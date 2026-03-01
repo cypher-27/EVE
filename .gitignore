@@ -26,3 +26,9 @@ auth.tf
 Thumbs.db
 core
 
+# === Secretos Prohibidos (Texto Plano) ===
+secrets.env
+*.env
+!*.enc.env        
+.sops/            
+age.key
