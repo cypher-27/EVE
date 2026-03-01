@@ -30,19 +30,25 @@ iptables -A INPUT -j DROP
 # 4. Reglas FORWARD (Reenvío)
 iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
 
-# --- REGLAS DE ACCESO DINÁMICAS (Para WG y ZT) ---
-# Permitimos que tanto Wireguard como ZeroTier usen las reglas de la lista
-{% for rule in wg_tcp_rules %}
-iptables -A FORWARD -i $WG_IFACE -d {{ rule.ip }} -p tcp --dport {{ rule.port }} -j ACCEPT # {{ rule.desc }}
-iptables -A FORWARD -i $ZT_IFACE -d {{ rule.ip }} -p tcp --dport {{ rule.port }} -j ACCEPT # {{ rule.desc }} (Acceso ZT)
+# --- ZONA DINÁMICA: GENERADA DESDE LAB-STATE.YAML ---
+{% for env in entornos_activos %}
+{% if env.estado == "presente" %}
+# Reglas para: {{ env.nombre }} (IP: {{ env.red.ip.split('/')[0] }})
+{% for rule in env.firewall_externo %}
+# {{ rule.descripcion }}
+iptables -A FORWARD -i $WG_IFACE -d {{ env.red.ip.split('/')[0] }} -p {{ rule.protocolo }} --dport {{ rule.puerto }} -j ACCEPT
+iptables -A FORWARD -i $ZT_IFACE -d {{ env.red.ip.split('/')[0] }} -p {{ rule.protocolo }} --dport {{ rule.puerto }} -j ACCEPT
 {% endfor %}
 
-# Permitir PING desde ambas redes para que Terraform no se cuelgue
-iptables -A FORWARD -i $WG_IFACE -p icmp -j ACCEPT
-iptables -A FORWARD -i $ZT_IFACE -p icmp -j ACCEPT
+{% endif %}
+{% endfor %}
 
-# Bloqueo total al resto de la LAN para ambas interfaces
+# --- SEGURIDAD FINAL ---
+# Permitir PING global para monitoreo
+iptables -A FORWARD -p icmp -j ACCEPT
+
+# Bloqueo total al resto de la LAN (Default Drop para VPNs)
 iptables -A FORWARD -i $WG_IFACE -d $LAN_SUBNET -j DROP
 iptables -A FORWARD -i $ZT_IFACE -d $LAN_SUBNET -j DROP
 
-echo "EVE Firewall: Reglas aplicadas por Ansible con éxito."
+echo "EVE Firewall: SDN actualizado dinámicamente desde el contrato maestro."

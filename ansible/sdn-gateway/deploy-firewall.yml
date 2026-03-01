@@ -1,35 +1,36 @@
 ---
-- name: Configurar EVE Gateway SDN Firewall
+- name: Configurar EVE Gateway SDN Firewall desde SSOT
   hosts: gateway
-  become: yes  # Le dice a Ansible que use 'sudo' en la Raspberry Pi
+  become: yes
 
   vars:
-    # Definimos la red base
+    # Definimos las rutas relativas desde donde se ejecuta el playbook
+    path_to_contract: "../../lab-state.yaml"
     wg_iface: "wg0"
     zt_iface: "ztktivnucr"
     lan_iface: "eth0"
     lan_subnet: "192.168.1.0/24"
     rasp_lan_ip: "192.168.1.30"
-    
-    # ¡Aquí está la magia! Tu lista de accesos.
-    # Si mañana creas una VM nueva, solo agregas una línea aquí.
-    wg_tcp_rules:
-      - { ip: "192.168.1.10", port: "8006", desc: "GUI Reze" }
-      - { ip: "192.168.1.20", port: "8006", desc: "GUI Makima" }
-      - { ip: "192.168.1.50", port: "22",   desc: "SSH VM Prueba" }
 
   tasks:
-    - name: 1. Inyectar script de Firewall desde la plantilla
+    - name: 1. Cargar el contrato maestro (lab-state.yaml)
+      ansible.builtin.include_vars:
+        file: "{{ path_to_contract }}"
+        name: contrato
+
+    - name: 2. Generar y aplicar script de Firewall (Jinja2 Dinámico)
       ansible.builtin.template:
         src: templates/eve-firewall.j2
         dest: /usr/local/bin/eve-firewall.sh
         owner: root
         group: root
         mode: '0755'
+      # Pasamos el objeto 'contrato' directamente a la plantilla
+      vars:
+        entornos_activos: "{{ contrato.entornos }}"
 
-    - name: 2. Reiniciar el servicio para aplicar las reglas
+    - name: 3. Reiniciar el servicio del Firewall
       ansible.builtin.systemd:
         name: eve-firewall.service
         state: restarted
-        daemon_reload: yes
 
