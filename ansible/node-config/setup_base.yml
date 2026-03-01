@@ -1,27 +1,72 @@
 ---
-- name: Configuración Base para Nodos EVE
-  hosts: eve_nodes
-  become: yes  # Ejecutar como sudo
+# ==============================================================================
+# PLAY 1: Cargar el SSOT y crear el Inventario Multimodal (SDDC)
+# ==============================================================================
+- name: "Fase 1: Generar Inventario Dinámico Multimodal desde SSOT"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    path_to_contract: "../../lab-state.yaml"
 
   tasks:
-    - name: Actualizar repositorios y sistema
+    - name: "1.1 Leer el contrato maestro (lab-state.yaml)"
+      ansible.builtin.include_vars:
+        file: "{{ path_to_contract }}"
+        name: contrato
+
+    - name: "1.2 Clasificar hosts y evadir SSH Fingerprint"
+      ansible.builtin.add_host:
+        name: "{{ item.nombre }}"
+        groups: 
+          - "eve_dynamic_nodes"
+          - "type_{{ item.tipo | default('vm') }}" # Magia pura: type_vm, type_lxc, type_fisico
+        ansible_host: "{{ item.red.ip.split('/')[0] }}"
+        ansible_user: "admin"
+        ansible_ssh_private_key_file: "~/.ssh/eve_admin"
+        # Tu aporte: Bypass de seguridad para máquinas recién nacidas
+        ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+      loop: "{{ contrato.entornos }}"
+      # Solo parseamos los que existen, sin importar su tipo
+      when: item.estado == "presente"
+
+# ==============================================================================
+# PLAY 2: Configuración Base (Distribuida por tipos)
+# ==============================================================================
+- name: "Fase 2: Ejecución de Configuración Base"
+  # Target: Todos los nodos dinámicos EXCEPTO los físicos (Makima/Reze) para no romper Proxmox
+  hosts: eve_dynamic_nodes:!type_fisico
+  become: yes
+  gather_facts: true
+
+  tasks:
+    - name: "2.1 Actualizar repositorios y sistema"
       apt:
         update_cache: yes
         upgrade: dist
 
-    - name: Instalar herramientas esenciales
+    - name: "2.2 Instalar dependencias globales (Aplica a VMs y LXCs)"
       apt:
         name:
           - curl
           - git
           - vim
-          - qemu-guest-agent
           - htop
         state: present
 
-    - name: Asegurar que el QEMU Guest Agent esté corriendo
-      systemd:
-        name: qemu-guest-agent
-        state: started
-        enabled: yes
+    # Esta tarea es exclusiva para las Máquinas Virtuales (Ignora LXCs)
+    - name: "2.3 Instalar y habilitar QEMU Guest Agent (SOLO VMs)"
+      block:
+        - name: "Instalar QEMU Agent"
+          apt:
+            name: qemu-guest-agent
+            state: present
+        - name: "Iniciar servicio QEMU Agent"
+          systemd:
+            name: qemu-guest-agent
+            state: started
+            enabled: yes
+      # Condición dinámica basada en el grupo que creaste
+      when: "'type_vm' in group_names"
 

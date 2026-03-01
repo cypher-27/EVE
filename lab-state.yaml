@@ -1,5 +1,11 @@
 entornos:
-  # === NODOS CORE (Físicos / Proxmox) ===
+  # === INFRAESTRUCTURA CORE (Físicos) ===
+  - nombre: "doom-gateway"
+    estado: "presente"
+    tipo: "gateway"
+    red:
+      ip: "192.168.1.30/24"
+
   - nombre: "makima-core"
     estado: "presente"
     tipo: "fisico"
