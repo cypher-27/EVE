@@ -1,34 +1,50 @@
-# === Secretos y Variables Sensibles ===
-# Este es el más importante: contiene tu API Token Secret
+# ==========================================
+# EVE MONO-REPO - GITIGNORE (Hardened)
+# ==========================================
+
+# --- [ 1. SECRETOS Y SEGURIDAD ] ---
+# Bloqueamos todo lo que huela a texto plano
+*.env
 *.tfvars
 *.tfvars.json
 auth.tf
+*.key
+*.pem
+*.pub
+.ssh/
+.sops/
+age.key
 
-# === Archivos de Estado de Terraform ===
-# Estos archivos contienen la arquitectura actual de tu lab (y a veces secretos en texto plano)
-*.tfstate
-*.tfstate.backup
-*.tfstate.lock.info
+# EXCEPCIONES: Archivos encriptados que SÍ deben ir al repo
+!secrets.enc.env
+!.sops.yaml
 
-# === Directorios de Trabajo ===
-# Aquí se descargan los plugins (providers), no es necesario subirlos
+# --- [ 2. TERRAFORM ] ---
+# Directorios de plugins y estados locales
 .terraform/
 .terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
 
-# === Llaves de Seguridad ===
-# Por si acaso generas llaves SSH dentro de la carpeta del proyecto
-*.pem
-*.key
-*.pub
+# --- [ 3. ANSIBLE ] ---
+# Logs y archivos temporales de ejecución
+*.log
+*.retry
+ansible.log
+.ansible_cache/
 
-# === Archivos de Sistema ===
+# --- [ 4. SISTEMA Y EDITORES ] ---
 .DS_Store
 Thumbs.db
 core
+*.swp
+*.swo
+.vscode/
+.idea/
 
-# === Secretos Prohibidos (Texto Plano) ===
-secrets.env
-*.env
-!*.enc.env        
-.sops/            
-age.key
+# --- [ 5. OTROS ] ---
+# Archivos temporales de despliegue
+dist/
+build/
+
