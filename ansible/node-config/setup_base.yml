@@ -8,7 +8,7 @@
   gather_facts: false
 
   vars:
-    path_to_contract: "../../lab-state.yaml"
+    path_to_contract: "{{ playbook_dir }}/../../lab-state.yaml"
 
   tasks:
     - name: "1.1 Leer el contrato maestro (lab-state.yaml)"
