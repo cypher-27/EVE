@@ -74,7 +74,7 @@
         owner: "root"
         group: "grafana"
         mode: "0640"
-      no_log: true
+      no_log: false
 
     - name: "5. Iniciar Servicios"
       ansible.builtin.service:
