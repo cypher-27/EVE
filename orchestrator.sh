@@ -178,19 +178,30 @@ with open('lab-state.yaml') as f:
             sleep 30
         fi
 
-        # --- 5. CONFIGURACIÓN (ANSIBLE NODES) ---
+	# --- 5. CONFIGURACIÓN (ANSIBLE NODES) ---
         CURRENT_STEP="Configuración de Software (Ansible)"
         echo -e "${GREEN}[5/5] Configurando Software y Roles...${NC}"
+        
+        # 5.1 Configuración Base (Todos los nodos)
+        echo -e "${CYAN}[5.1] Aplicando Configuración Base (Debian/Alpine)...${NC}"
         NODE_OUTPUT=$(ansible-playbook -i localhost, ansible/node-config/setup_base.yml 2>&1)
         if [ $? -ne 0 ]; then
             echo "$NODE_OUTPUT"
             handle_error "Ansible Node Config" "Fallo en la configuración base de las VMs."
         fi
 
+        # 5.2 Configuración del Monitor (El Espejo)
+        echo -e "${CYAN}[5.2] Configurando VictoriaMetrics y Grafana...${NC}"
+        MONITOR_OUTPUT=$(ansible-playbook -i localhost, ansible/monitor/setup_monitor.yml 2>&1)
+        if [ $? -ne 0 ]; then
+            echo "$MONITOR_OUTPUT"
+            handle_error "Ansible Monitor Config" "Fallo al configurar el stack de monitoreo."
+        fi
+
         # --- FINALIZACIÓN ---
         IN_PROGRESS=false
         echo -e "${GREEN}¡Despliegue Completo!${NC}"
-        send_telegram "✅ *DESPLIEGUE EXITOSO*"
+        send_telegram "✅ *DESPLIEGUE COMPLETO Y MONITOREADO*"
         ;;
 esac
 

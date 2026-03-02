@@ -1,0 +1,72 @@
+# 1. Fase de Inventario (Igual que en setup_base)
+- name: "Fase 1: Generar Inventario para el Monitor"
+  hosts: localhost
+  connection: local
+  tasks:
+    - name: "Leer contrato"
+      include_vars:
+        file: "../../lab-state.yaml"
+        name: contrato
+
+    - name: "Añadir el monitor al inventario"
+      add_host:
+        name: "{{ item.nombre }}"
+        groups: "eve_monitor_group" # Grupo específico para el monitor
+        ansible_host: "{{ item.red.ip.split('/')[0] }}"
+        ansible_user: "root"
+        ansible_ssh_private_key_file: "~/.ssh/eve_admin"
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+      loop: "{{ contrato.entornos }}"
+      when: item.nombre == "eve-monitor"
+
+# 2. Fase de Configuración Real
+- name: "Fase 2.6: Configuración del Espejo (Observabilidad)"
+  hosts: eve-monitor
+  become: yes
+  gather_facts: true
+
+  tasks:
+    - name: "1. Instalar VictoriaMetrics y Grafana en Alpine"
+      community.general.apk:
+        name: 
+          - victoria-metrics
+          - grafana
+        update_cache: yes
+        state: present
+
+    - name: "2. Crear directorio de datos en el HDD (Mountpoint)"
+      ansible.builtin.file:
+        path: /var/lib/victoria-metrics
+        state: directory
+        owner: victoria-metrics
+        group: victoria-metrics
+        mode: '0755'
+
+    - name: "3. Generar Configuración de Auto-Discovery (Jinja2)"
+      ansible.builtin.template:
+        src: victoria-metrics-opts.j2
+        dest: /etc/conf.d/victoria-metrics
+      notify: Restart VictoriaMetrics
+
+    - name: "4. Inyectar Password de Grafana desde SOPS"
+      ansible.builtin.lineinfile:
+        path: /etc/grafana/grafana.ini
+        regexp: '^;admin_password ='
+        line: "admin_password = {{ grafana_admin_password }}"
+      no_log: true # Por seguridad no mostramos el pass en el log
+
+    - name: "5. Iniciar Servicios"
+      ansible.builtin.service:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      loop:
+        - victoria-metrics
+        - grafana
+
+  handlers:
+    - name: Restart VictoriaMetrics
+      ansible.builtin.service:
+        name: victoria-metrics
+        state: restarted
+
