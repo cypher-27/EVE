@@ -76,6 +76,13 @@
         mode: "0640"
       no_log: false
 
+    - name: "4.1 Forzar a Grafana a escuchar en todas las interfaces"
+      ansible.builtin.lineinfile:
+        path: /etc/conf.d/grafana
+        regexp: '127.0.0.1'
+        line: 'grafana_opts="--cfg:server.http_addr=0.0.0.0"'
+      notify: Restart Grafana
+
     - name: "5. Iniciar Servicios"
       ansible.builtin.service:
         name: "{{ item }}"
@@ -89,4 +96,9 @@
     - name: Restart VictoriaMetrics
       ansible.builtin.service:
         name: victoria-metrics
+        state: restarted
+
+    - name: Restart Grafana
+      ansible.builtin.service:
+        name: grafana
         state: restarted
