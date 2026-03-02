@@ -46,15 +46,23 @@
   tasks:
     - name: "2.0 Test de Conexión (Sin Sudo)"
       ansible.builtin.ping:
-      become: no # Probamos primero si podemos entrar sin ser root
+      become: no
 
-    - name: "2.1 Actualizar repositorios y sistema"
-      apt:
+    # --- LÓGICA MULTI-OS ---
+    - name: "2.1 Actualizar repositorios y sistema (Debian)"
+      ansible.builtin.apt:
         update_cache: yes
         upgrade: dist
+      when: ansible_os_family == "Debian"
 
-    - name: "2.2 Instalar dependencias globales (Aplica a VMs y LXCs)"
-      apt:
+    - name: "2.1 Actualizar repositorios y sistema (Alpine)"
+      community.general.apk:
+        update_cache: yes
+        upgrade: yes
+      when: ansible_os_family == "Alpine"
+
+    - name: "2.2 Instalar dependencias globales"
+      ansible.builtin.package: # Detecta automáticamente si usar apt o apk
         name:
           - curl
           - git
@@ -62,17 +70,19 @@
           - htop
         state: present
 
-    # Esta tarea es exclusiva para las Máquinas Virtuales (Ignora LXCs)
+    # --- EXCLUSIVO PARA VMs ---
     - name: "2.3 Instalar y habilitar QEMU Guest Agent (SOLO VMs)"
       block:
         - name: "Instalar QEMU Agent"
-          apt:
+          ansible.builtin.apt:
             name: qemu-guest-agent
             state: present
         - name: "Iniciar servicio QEMU Agent"
-          systemd:
+          ansible.builtin.systemd:
             name: qemu-guest-agent
             state: started
             enabled: yes
-      # Condición dinámica basada en el grupo que creaste
-      when: "'type_vm' in group_names"
+      # Solo ejecutamos si el host pertenece al grupo type_vm Y es Debian
+      when: 
+        - "'type_vm' in group_names"
+        - "ansible_os_family == 'Debian'"

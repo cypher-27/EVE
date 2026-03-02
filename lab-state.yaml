@@ -48,6 +48,7 @@ entornos:
   - nombre: "lxc-ligero-01"
     estado: "presente"
     tipo: "lxc"
+    os: "alpine"
     nodo_proxmox: "reze"
     vmid: 200
     red:

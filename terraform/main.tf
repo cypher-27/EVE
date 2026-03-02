@@ -96,7 +96,7 @@ resource "proxmox_lxc" "entorno_lxc" {
   }
   
   # Plantilla base (Asegúrate de haberla descargado en Proxmox)
-  ostemplate   = "local:vztmpl/debian-12-standard_12.12-1_amd64.tar.zst"
+  ostemplate   = each.value.os == "alpine" ? "local:vztmpl/alpine-3.23-default_20260116_amd64.tar.xz" : "local:vztmpl/debian-12-standard_12.12-1_amd64.tar.zst"
   unprivileged = true
   
   # Asignamos la contraseña generada aleatoriamente
