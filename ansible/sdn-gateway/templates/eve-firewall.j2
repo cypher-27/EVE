@@ -34,7 +34,9 @@ iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
 {% for env in entornos_activos %}
 {% if env.estado == "presente" %}
 # Reglas para: {{ env.nombre }} (IP: {{ env.red.ip.split('/')[0] }})
-{% for rule in env.firewall_externo %}
+
+# Usamos | default([]) para que si no existe 'firewall_externo', no explote
+{% for rule in env.firewall_externo | default([]) %}
 # {{ rule.descripcion }}
 iptables -A FORWARD -i $WG_IFACE -d {{ env.red.ip.split('/')[0] }} -p {{ rule.protocolo }} --dport {{ rule.puerto }} -j ACCEPT
 iptables -A FORWARD -i $ZT_IFACE -d {{ env.red.ip.split('/')[0] }} -p {{ rule.protocolo }} --dport {{ rule.puerto }} -j ACCEPT
