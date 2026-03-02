@@ -45,7 +45,7 @@
   tasks:
     - name: "2.1 Re-cargar contrato para usarlo en el template"
       ansible.builtin.include_vars:
-        file: "../../lab-state.yaml"
+        file: "{{ playbook_dir }}/../../lab-state.yaml"
         name: contrato
 
     - name: "2.2 Generar script de Firewall (Jinja2)"
