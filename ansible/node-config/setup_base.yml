@@ -103,11 +103,13 @@
     # --- MONITOREO (EL INFORMANTE) ---
     - name: "2.4 Instalar Node Exporter (Informante de métricas)"
       ansible.builtin.package:
-        name: "{{ 'node-exporter' if ansible_os_family == 'Alpine' else 'prometheus-node-exporter' }}"
+        # Usamos el nombre oficial que es común en Debian y Alpine
+        name: "prometheus-node-exporter"
         state: present
 
     - name: "2.5 Asegurar que Node Exporter esté corriendo"
       ansible.builtin.service:
-        name: "{{ 'node-exporter' if ansible_os_family == 'Alpine' else 'prometheus-node-exporter' }}"
+        # El servicio también comparte nombre en ambos mundos
+        name: "prometheus-node-exporter"
         state: started
         enabled: yes
