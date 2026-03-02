@@ -126,10 +126,16 @@ case "$1" in
         echo -e "${GREEN}[0/5] Validando recursos del cluster...${NC}"
         python3 validator.py || handle_error "Validación de Contrato" "El lab-state.yaml viola las leyes del cluster."
 
-        # --- 1. PRE-FLIGHT CHECKS ---
+        # --- 1. PRE-FLIGHT CHECKS & INIT ---
         CURRENT_STEP="Pre-flight Checks"
-        echo -e "${GREEN}[1/5] Ejecutando Linting y Sintaxis...${NC}"
-        (cd terraform && terraform validate) > /dev/null || handle_error "Linting Terraform" "Error en .tf"
+        echo -e "${GREEN}[1/5] Sincronizando proveedores y validando sintaxis...${NC}"
+        # Inicialización automática (descarga proveedores si faltan)
+        cd terraform
+        terraform init -input=false -backend-config="dynamodb_table=devilhunters-terraform-lock" > /dev/null 2>&1 || handle_error "Terraform Init" "Fallo al sincronizar proveedores."
+        # Validar Terraform
+        terraform validate > /dev/null || handle_error "Linting Terraform" "Error en archivos .tf"
+        cd ..
+        # Validar Ansible
         ansible-playbook ansible/sdn-gateway/deploy-firewall.yml --syntax-check > /dev/null 2>&1 || handle_error "Linting Ansible SDN" "Error en red"
         ansible-playbook ansible/node-config/setup_base.yml --syntax-check > /dev/null 2>&1 || handle_error "Linting Ansible Node" "Error en config"
 

@@ -57,4 +57,7 @@ entornos:
       cores: 1
       memoria: 512
       disco: 8
-
+    firewall_externo:
+      - puerto: 22
+        protocolo: "tcp"
+        descripcion: "SSH LXC"

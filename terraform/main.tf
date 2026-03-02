@@ -90,6 +90,10 @@ resource "proxmox_lxc" "entorno_lxc" {
   hostname    = each.value.nombre
   target_node = each.value.nodo_proxmox
   vmid        = each.value.vmid
+
+  features {
+    nesting = true # Permite correr systemd/docker dentro de forma más estable
+  }
   
   # Plantilla base (Asegúrate de haberla descargado en Proxmox)
   ostemplate   = "local:vztmpl/debian-12-standard_12.12-1_amd64.tar.zst"
