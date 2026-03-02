@@ -1,23 +1,24 @@
-# 1. Fase de Inventario (Igual que en setup_base)
-- name: "Fase 1: Generar Inventario para el Monitor"
+# 1. Fase de Inventario (Descubrimiento Total)
+- name: "Fase 1: Descubrimiento de Nodos para el Espejo"
   hosts: localhost
   connection: local
   tasks:
-    - name: "Leer contrato"
+    - name: "Leer contrato maestro"
       include_vars:
         file: "../../lab-state.yaml"
         name: contrato
 
-    - name: "Añadir el monitor al inventario"
+    - name: "Poblar inventario dinámico"
       add_host:
         name: "{{ item.nombre }}"
-        groups: "eve_monitor_group" # Grupo específico para el monitor
+        # Clasificamos para que el monitor sepa a quién "scrapear"
+        groups: "{{ 'eve_monitor_group' if item.nombre == 'eve-monitor' else 'targets_to_monitor' }}"
         ansible_host: "{{ item.red.ip.split('/')[0] }}"
         ansible_user: "root"
         ansible_ssh_private_key_file: "~/.ssh/eve_admin"
         ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
       loop: "{{ contrato.entornos }}"
-      when: item.nombre == "eve-monitor"
+      when: item.estado == 'presente' and item.tipo in ['vm', 'lxc']
 
 # 2. Fase de Configuración Real
 - name: "Fase 2.6: Configuración del Espejo (Observabilidad)"
