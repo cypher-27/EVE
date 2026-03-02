@@ -1,0 +1,46 @@
+---
+- name: "Fase 1: Identificar Gateway para Purga"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: "Leer contrato maestro"
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../../lab-state.yaml"
+        name: contrato
+
+    - name: "Inyectar Gateway al inventario"
+      ansible.builtin.add_host:
+        name: "{{ item.nombre }}"
+        groups: "gateway_nodes"
+        ansible_host: "{{ item.red.ip.split('/')[0] }}"
+        ansible_user: "doom"
+        ansible_ssh_private_key_file: "~/.ssh/id_ed25519_eve"
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+      loop: "{{ contrato.entornos }}"
+      when: item.tipo == "gateway"
+
+- name: "Fase 2: Purga de Reglas SDN"
+  hosts: gateway_nodes
+  become: yes
+  vars:
+    lan_iface: "eth0"
+    rasp_lan_ip: "192.168.1.30"
+    wg_iface: "wg0"
+    zt_iface: "ztktivnucr"
+    lan_subnet: "192.168.1.0/24"
+  tasks:
+    - name: "Generar script de Firewall LIMPIO (Sin entornos)"
+      ansible.builtin.template:
+        src: templates/eve-firewall.j2
+        dest: /usr/local/bin/eve-firewall.sh
+        mode: '0755'
+      vars:
+        # Pasamos una lista vacía para que el ciclo 'for' del template no genere reglas
+        entornos_activos: []
+
+    - name: "Aplicar Firewall Base"
+      ansible.builtin.systemd:
+        name: eve-firewall.service
+        state: restarted
+

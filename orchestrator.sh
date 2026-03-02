@@ -69,14 +69,37 @@ wait_for_ssh() {
 
 case "$1" in
     --destroy)
-        echo -e "${RED}[!] INICIANDO MODO DESTRUCCIÓN...${NC}"
-        send_telegram "⚠️ *AVISO*: Iniciando destrucción total del laboratorio."
-        # TODO: Añadiremos la lógica de Ansible absent y Terraform destroy aquí
-        # después de comprobar que el flujo normal (apply) funciona perfectamente.
-        echo "Lógica de destrucción en construcción..."
+        echo -e "${RED}⚠️  PELIGRO: Vas a destruir TODA la infraestructura de EVE Edge.${NC}"
+        read -p "¿Estás totalmente seguro? (y/n): " confirm
+        if [[ $confirm != [yY] ]]; then
+            echo "Operación cancelada."
+            exit 0
+        fi
+
+        send_telegram "💀 *AVISO*: Iniciando destrucción total del laboratorio..."
+
+        # 1. LIMPIEZA DE RED (SDN)
+        echo -e "${GREEN}[1/2] Limpiando reglas de firewall en el Gateway...${NC}"
+        ansible-playbook -i localhost, ansible/sdn-gateway/cleanup-firewall.yml > /dev/null
+        if [ $? -ne 0 ]; then
+            handle_error "Limpieza SDN" "No se pudieron purgar las reglas del firewall."
+        fi
+
+        # 2. DESTRUCCIÓN DE INFRAESTRUCTURA (TERRAFORM)
+        echo -e "${GREEN}[2/2] Ejecutando Terraform Destroy...${NC}"
+        cd terraform
+        TF_DESTROY=$(terraform destroy -auto-approve 2>&1)
+        if [ $? -ne 0 ]; then
+            handle_error "Terraform Destroy" "${TF_DESTROY}"
+        fi
+        cd ..
+
+        echo -e "${GREEN}¡Laboratorio destruido con éxito!${NC}"
+        send_telegram "💀 *LABORATORIO DESTRUIDO*: La infraestructura y las reglas de red han sido eliminadas."
         exit 0
         ;;
     *)
+
         # --- FLUJO NORMAL DE DESPLIEGUE ---
         
         # --- 1. PRE-FLIGHT CHECKS ---
