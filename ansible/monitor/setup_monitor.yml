@@ -29,6 +29,11 @@
     secretos: "{{ lookup('community.sops.sops', '../../secrets.enc.yaml') | from_yaml }}"
 
   tasks:
+    - name: "0. Leer contrato para el Scrape (lab_state)"
+      ansible.builtin.include_vars:
+        file: "../../lab-state.yaml"
+        name: lab_state
+
     - name: "1. Instalar VictoriaMetrics y Grafana"
       community.general.apk:
         name: [victoria-metrics, grafana]
