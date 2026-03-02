@@ -1,18 +1,46 @@
 #!/bin/bash
 
 # ==============================================================================
-# EVE Orchestrator - The Grand Director
+# EVE Orchestrator - The Grand Director (Armored Version)
 # ==============================================================================
 
 # Colores
 GREEN='\033[0;32m'
 RED='\033[0;31m'
+YELLOW='\033[0;33m'
 NC='\033[0m'
 
 # Seguridad SSH
 export ANSIBLE_HOST_KEY_CHECKING=False
 
+# Variables de seguimiento
+CURRENT_STEP="Inicialización"
+IN_PROGRESS=true
+
+# --- FUNCIÓN DE LIMPIEZA Y TRAPS ---
+cleanup() {
+    local exit_code=$?
+    if [ "$IN_PROGRESS" = true ]; then
+        echo -e "\n${RED}[!] INTERRUPCIÓN DETECTADA (Código: $exit_code)${NC}"
+        echo -e "${YELLOW}[!] Etapa interrumpida: $CURRENT_STEP${NC}"
+        
+        # Alerta específica por Telegram
+        local msg="⚠️ *EJECUCIÓN INTERRUMPIDA*
+        
+📍 *Etapa:* \`$CURRENT_STEP\`
+🚫 *Estado:* El proceso fue cancelado o falló inesperadamente.
+🔐 *Aviso:* Es posible que el **State Lock** de Terraform siga activo en DynamoDB."
+        
+        send_telegram "$msg"
+    fi
+    exit $exit_code
+}
+
+# Capturamos SIGINT (Ctrl+C), SIGTERM (Terminación) y EXIT
+trap cleanup EXIT SIGINT SIGTERM
+
 # --- AUTO-LOAD SECRETS ---
+CURRENT_STEP="Carga de Secretos"
 if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
     echo -e "${GREEN}[*] Secretos no detectados. Cargando vía SOPS...${NC}"
     source <(sops -d secrets.enc.env) || handle_error "Carga de Secretos" "No se pudo desencriptar secrets.enc.env"
@@ -24,12 +52,13 @@ send_telegram() {
     local message="$1"
     curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
         -d chat_id="${TELEGRAM_CHAT_ID}" \
-        -d text="🤖 *EVE Edge Report*: ${message}" -d parse_mode="Markdown" > /dev/null
+        -d text="*EVE Report*: ${message}" -d parse_mode="Markdown" > /dev/null
 }
 
 handle_error() {
     local step="$1"
     local error_log="$2"
+    IN_PROGRESS=false # Evitamos doble notificación del trap
     echo -e "${RED}[ERROR] Fallo en: ${step}${NC}"
     send_telegram "❌ *ERROR CRÍTICO* en etapa: \`${step}\`
     
@@ -42,9 +71,7 @@ wait_for_ssh() {
     local ip=$1
     local max_retries=30
     local count=0
-    
     echo -n -e "${GREEN}Esperando SSH en $ip...${NC}"
-    
     until nc -z -v -w5 "$ip" 22 &>/dev/null; do
         echo -n "."
         sleep 2
@@ -54,8 +81,6 @@ wait_for_ssh() {
             handle_error "Espera de SSH" "La VM $ip no levantó el puerto 22."
         fi
     done
-    
-    # Limpiamos la IP de known_hosts para evitar el error de cambio de llaves
     ssh-keygen -f "$HOME/.ssh/known_hosts" -R "$ip" > /dev/null 2>&1
     echo -e "${GREEN} ¡Listo y purgado!${NC}"
 }
@@ -66,81 +91,67 @@ wait_for_ssh() {
 
 case "$1" in
     --destroy)
+        CURRENT_STEP="Destrucción (Confirmación)"
         echo -e "${RED}⚠️  PELIGRO: Vas a destruir TODA la infraestructura de EVE Edge.${NC}"
         read -p "¿Estás totalmente seguro? (y/n): " confirm
-        if [[ $confirm != [yY] ]]; then 
-            echo "Operación cancelada."
-            exit 0
-        fi
+        if [[ $confirm != [yY] ]]; then exit 0; fi
 
-        send_telegram "💀 *AVISO*: Iniciando destrucción total del laboratorio..."
+        send_telegram "*AVISO*: Iniciando destrucción total del laboratorio..."
 
-        # 1. DESTRUCCIÓN DE INFRAESTRUCTURA (TERRAFORM) PRIMERO
+        CURRENT_STEP="Terraform Destroy"
         echo -e "${GREEN}[1/2] Ejecutando Terraform Destroy...${NC}"
         cd terraform
         TF_DESTROY=$(terraform destroy -auto-approve 2>&1)
         if [ $? -ne 0 ]; then
             if echo "$TF_DESTROY" | grep -q "Error acquiring the state lock"; then
-                echo -e "${RED}[!] BLOQUEO DE ESTADO DETECTADO.${NC}"
-                handle_error "Terraform Lock" "DynamoDB ha bloqueado la ejecución (Apply o Destroy en curso). Libera el lock manualmente si es un error."
+                handle_error "Terraform Lock" "DynamoDB bloqueado. Libera el lock manualmente."
             else
-                echo -e "${RED}--- LOG DE ERROR DE TERRAFORM ---${NC}"
                 echo "$TF_DESTROY"
-                echo -e "${RED}---------------------------------${NC}"
-                handle_error "Terraform Destroy" "Error al destruir la infraestructura. Revisa el log en la terminal."
+                handle_error "Terraform Destroy" "Error al destruir infraestructura."
             fi
         fi
         cd ..
 
-        # 2. LIMPIEZA DE RED (SDN) AL FINAL
-        echo -e "${GREEN}[2/2] Limpiando reglas de firewall (Conservando acceso a físicos)...${NC}"
-        ansible-playbook -i localhost, ansible/sdn-gateway/cleanup-firewall.yml > /dev/null
-        if [ $? -ne 0 ]; then
-            handle_error "Limpieza SDN" "Terraform terminó, pero falló la limpieza de iptables en el Gateway."
-        fi
+        CURRENT_STEP="SDN Cleanup"
+        echo -e "${GREEN}[2/2] Limpiando reglas de firewall (Conservando físicos)...${NC}"
+        ansible-playbook -i localhost, ansible/sdn-gateway/cleanup-firewall.yml > /dev/null || handle_error "Limpieza SDN" "Fallo en purga de iptables."
         
+        IN_PROGRESS=false # Finalización exitosa
         echo -e "${GREEN}¡Laboratorio destruido con éxito!${NC}"
-        send_telegram "💀 *LABORATORIO DESTRUIDO*
-La infraestructura de VMs ha sido eliminada y el firewall purgado."
+        send_telegram "*LABORATORIO DESTRUIDO*."
         exit 0
         ;;
     *)
-
-        # --- FLUJO NORMAL DE DESPLIEGUE ---
-        
         # --- 1. PRE-FLIGHT CHECKS ---
+        CURRENT_STEP="Pre-flight Checks"
         echo -e "${GREEN}[1/5] Ejecutando Linting y Sintaxis...${NC}"
         (cd terraform && terraform validate) > /dev/null || handle_error "Linting Terraform" "Error en .tf"
         ansible-playbook ansible/sdn-gateway/deploy-firewall.yml --syntax-check > /dev/null 2>&1 || handle_error "Linting Ansible SDN" "Error en red"
         ansible-playbook ansible/node-config/setup_base.yml --syntax-check > /dev/null 2>&1 || handle_error "Linting Ansible Node" "Error en config"
 
-        # --- 2. RED (ANSIBLE SDN) PRIMERO ---
+        # --- 2. RED (ANSIBLE SDN) ---
+        CURRENT_STEP="Configuración de Red (SDN)"
         echo -e "${GREEN}[2/5] Configurando Firewall en SDN Gateway...${NC}"
-        SDN_OUTPUT=$(ansible-playbook -i localhost, ansible/sdn-gateway/deploy-firewall.yml 2>&1)
-        if [ $? -ne 0 ]; then
-            echo "$SDN_OUTPUT"
-            handle_error "Ansible SDN" "Fallo en la aplicación de red. Revisa los logs arriba."
-        fi
+        ansible-playbook -i localhost, ansible/sdn-gateway/deploy-firewall.yml > /dev/null 2>&1 || handle_error "Ansible SDN" "Fallo en aplicación de red."
 
-        # --- 3. INFRAESTRUCTURA (TERRAFORM) DESPUÉS ---
+        # --- 3. INFRAESTRUCTURA (TERRAFORM) ---
+        CURRENT_STEP="Despliegue Terraform"
         echo -e "${GREEN}[3/5] Desplegando en Proxmox con Terraform...${NC}"
         send_telegram "🚀 Iniciando despliegue de infraestructura..."
         cd terraform
         TF_OUTPUT=$(terraform apply -auto-approve 2>&1)
         if [ $? -ne 0 ]; then
             if echo "$TF_OUTPUT" | grep -q "Error acquiring the state lock"; then
-                echo -e "${RED}[!] BLOQUEO DE ESTADO DETECTADO.${NC}"
-                handle_error "Terraform Lock" "DynamoDB ha bloqueado la ejecución. Hay otro proceso corriendo o un candado huérfano. Usa 'terraform force-unlock' si es necesario."
+                handle_error "Terraform Lock" "DynamoDB bloqueado. Revisa si hay otro proceso activo."
             else
-                echo -e "${RED}--- LOG DE ERROR DE TERRAFORM ---${NC}"
                 echo "$TF_OUTPUT"
-                echo -e "${RED}---------------------------------${NC}"
-                handle_error "Terraform Apply" "Error en el despliegue. Revisa el log en la terminal."
+                handle_error "Terraform Apply" "Error en el despliegue de Proxmox."
             fi
         fi
         cd ..
 
-        # --- 4. ESPERA INTELIGENTE (WAIT FOR SSH) ---
+        # --- 4. ESPERA SSH ---
+        CURRENT_STEP="Espera de Conectividad (Wait for SSH)"
         echo -e "${GREEN}[4/5] Comprobando conectividad de las VMs...${NC}"
         VMS_IPS=$(python3 -c "
 import yaml
@@ -151,30 +162,25 @@ with open('lab-state.yaml') as f:
             print(env['red']['ip'].split('/')[0])
 " 2>/dev/null)
 
-        if [ -z "$VMS_IPS" ]; then
-            echo "No hay VMs o LXCs nuevas para esperar."
-        else
-            for ip in $VMS_IPS; do
-                wait_for_ssh "$ip"
-            done
-            echo -e "${GREEN}[*] Estabilizando servicios internos (30s)...${NC}"
+        if [ ! -z "$VMS_IPS" ]; then
+            for ip in $VMS_IPS; do wait_for_ssh "$ip"; done
+            echo -e "${GREEN}[*] Estabilizando servicios (30s)...${NC}"
             sleep 30
         fi
 
         # --- 5. CONFIGURACIÓN (ANSIBLE NODES) ---
+        CURRENT_STEP="Configuración de Software (Ansible)"
         echo -e "${GREEN}[5/5] Configurando Software y Roles...${NC}"
         NODE_OUTPUT=$(ansible-playbook -i localhost, ansible/node-config/setup_base.yml 2>&1)
         if [ $? -ne 0 ]; then
-            echo -e "${RED}--- LOG DE ERROR DE ANSIBLE (INVESTIGACIÓN) ---${NC}"
             echo "$NODE_OUTPUT"
-            echo -e "${RED}-----------------------------------------------${NC}"
-            handle_error "Ansible Node Config" "Fallo en la configuración base. Revisa el log arriba."
+            handle_error "Ansible Node Config" "Fallo en la configuración base de las VMs."
         fi
 
         # --- FINALIZACIÓN ---
+        IN_PROGRESS=false
         echo -e "${GREEN}¡Despliegue Completo!${NC}"
-        send_telegram "✅ *DESPLIEGUE EXITOSO*
-La infraestructura está arriba, la red configurada y el software instalado de acuerdo al estado maestro."
+        send_telegram "✅ *DESPLIEGUE EXITOSO*"
         ;;
 esac
 
