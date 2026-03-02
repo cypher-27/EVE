@@ -92,7 +92,7 @@ resource "proxmox_lxc" "entorno_lxc" {
   vmid        = each.value.vmid
   
   # Plantilla base (Asegúrate de haberla descargado en Proxmox)
-  ostemplate   = "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst"
+  ostemplate   = "local:vztmpl/debian-12-standard_12.12-1_amd64.tar.zst"
   unprivileged = true
   
   # Asignamos la contraseña generada aleatoriamente
