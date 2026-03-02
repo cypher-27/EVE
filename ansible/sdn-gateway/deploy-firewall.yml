@@ -45,12 +45,6 @@
     zt_iface: "ztktivnucr"
     lan_subnet: "192.168.1.0/24"
 
-  vars:
-    # Estas variables son propias de la lógica de red de la Pi
-    wg_iface: "wg0"
-    zt_iface: "ztktivnucr"
-    lan_subnet: "192.168.1.0/24"
-
   tasks:
     - name: "2.1 Re-cargar contrato para usarlo en el template"
       ansible.builtin.include_vars:
