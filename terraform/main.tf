@@ -90,20 +90,14 @@ resource "proxmox_lxc" "entorno_lxc" {
   hostname    = each.value.nombre
   target_node = each.value.nodo_proxmox
   vmid        = each.value.vmid
-
-  features {
-    nesting = true # Permite correr systemd/docker dentro de forma más estable
-  }
   
-  # Plantilla base (Asegúrate de haberla descargado en Proxmox)
+  # Usamos nuestro nuevo Golden Template si es Alpine
   ostype       = each.value.os == "alpine" ? "alpine" : "debian"
-  ostemplate   = each.value.os == "alpine" ? "local:vztmpl/alpine-3.23-default_20260116_amd64.tar.xz" : "local:vztmpl/debian-12-standard_12.12-1_amd64.tar.zst"
-  unprivileged = true
+  ostemplate   = each.value.os == "alpine" ? "local:vztmpl/alpine-eve-custom.tar.xz" : "local:vztmpl/debian-12-standard_12.12-1_amd64.tar.zst"
   
-  # Asignamos la contraseña generada aleatoriamente
+  unprivileged = true
   password     = random_password.lxc_password[each.key].result
   
-  # Inyectamos tu llave SSH pública al root del contenedor
   ssh_public_keys = <<EOF
   ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM9kG6lsmZBCtkdYOAIZwNJ5foJRHrRItjpNlQYrX4zT admin@eve
   EOF
@@ -113,7 +107,6 @@ resource "proxmox_lxc" "entorno_lxc" {
 
   rootfs {
     storage = "local-zfs"
-    # Leemos el disco desde el YAML y le añadimos la "G" de Gigabytes
     size    = "${each.value.recursos.disco}G" 
   }
 
@@ -123,7 +116,10 @@ resource "proxmox_lxc" "entorno_lxc" {
     ip     = each.value.red.ip
     gw     = each.value.red.gateway
   }
-  
+
+  features {
+    nesting = true
+  } 
   # Start on boot
   start = true
 }
