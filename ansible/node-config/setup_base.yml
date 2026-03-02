@@ -36,7 +36,7 @@
 # ==============================================================================
 - name: "Fase 2: Ejecución de Configuración Base"
   # Target: Todos los nodos dinámicos EXCEPTO los físicos (Makima/Reze) para no romper Proxmox
-  hosts: eve_dynamic_nodes:!type_fisico
+  hosts: type_vm:type_lxc
   become: yes
   gather_facts: true
 
