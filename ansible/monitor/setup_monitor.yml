@@ -108,11 +108,21 @@
         enabled: yes
       loop: [victoria-metrics, grafana]
 
-    # --- PROVISIONING DE DASHBOARDS ---
+    - name: "2. FIX: Crear estructura de carpetas en el Path de Datos (Alpine Override)"
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: grafana
+        group: grafana
+        mode: '0755'
+      loop:
+        - /var/lib/grafana/provisioning/datasources
+        - /var/lib/grafana/provisioning/dashboards
+
     - name: "7.1 Configurar el Provider de Dashboards"
       ansible.builtin.template:
         src: dashboard-provider.yml.j2
-        dest: /etc/grafana/provisioning/dashboards/eve-provider.yaml
+        dest: /var/lib/grafana/provisioning/dashboards/eve-provider.yaml
         owner: root
         group: grafana
         mode: '0640'
@@ -121,7 +131,7 @@
     - name: "7.2 Inyectar JSON del Dashboard Maestro"
       ansible.builtin.copy:
         src: files/node-exporter-dash.json
-        dest: /etc/grafana/provisioning/dashboards/node-exporter-dash.json
+        dest: /var/lib/grafana/provisioning/dashboards/node-exporter-dash.json
         owner: root
         group: grafana
         mode: '0640'
