@@ -86,3 +86,6 @@ entornos:
       - puerto: 8428
         protocolo: "tcp"
         descripcion: "VictoriaMetrics Ingest"
+      - puerto: 22
+        protocolo: "tcp"
+        descripcion: "SSH LXC"
