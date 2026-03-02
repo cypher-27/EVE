@@ -21,15 +21,18 @@
         name: "{{ item.nombre }}"
         groups:
           - "eve_dynamic_nodes"
-          - "type_{{ item.tipo | default('vm') }}" # Magia pura: type_vm, type_lxc, type_fisico
+          - "type_{{ item.tipo | default('vm') }}" # Mantiene tu magia de grupos
         ansible_host: "{{ item.red.ip.split('/')[0] }}"
-        ansible_user: "admin"
+        # --- EL FIX MULTIMODAL ---
+        # Si es VM usa 'admin', si es LXC usa 'root'
+        ansible_user: "{{ 'admin' if (item.tipo | default('vm')) == 'vm' else 'root' }}"
+        # --- TU LLAVE REAL ---
         ansible_ssh_private_key_file: "~/.ssh/eve_admin"
-        # Tu aporte: Bypass de seguridad para máquinas recién nacidas
         ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o CheckHostIP=no"
       loop: "{{ contrato.entornos }}"
-      # Solo parseamos los que existen, sin importar su tipo
-      when: item.estado == "presente"
+      when:
+        - item.estado == "presente"
+        - item.tipo in ['vm', 'lxc']
 
 # ==============================================================================
 # PLAY 2: Configuración Base (Distribuida por tipos)
