@@ -56,8 +56,8 @@
       ansible.builtin.file:
         path: /var/lib/victoria-metrics
         state: directory
-        owner: nobody
-        group: nobody
+        owner: victoriametrics
+        group: victoriametrics
         mode: '0775'
 
     - name: "4. Generar Archivos de Configuración"
@@ -68,7 +68,7 @@
         group: "{{ item.group | default('root') }}"
         mode: '0644'
       loop:
-        - { src: 'scrape.yml.j2', dest: '/etc/victoria-metrics-scrape.yml', group: 'nobody' }
+        - { src: 'scrape.yml.j2', dest: '/etc/victoria-metrics-scrape.yml', group: 'victoriametrics' }
         - { src: 'victoria-metrics-opts.j2', dest: '/etc/conf.d/victoria-metrics' }
       notify: Restart VictoriaMetrics
 
