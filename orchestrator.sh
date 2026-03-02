@@ -52,11 +52,15 @@ wait_for_ssh() {
         sleep 2
         ((count++))
         if [ $count -ge $max_retries ]; then
-            echo -e "\n${RED}[!] Timeout: La IP $ip no respondió tras 60 segundos.${NC}"
-            handle_error "Espera de SSH" "La VM $ip no levantó el puerto 22 a tiempo."
+            echo -e "\n${RED}[!] Timeout: La IP $ip no respondió.${NC}"
+            handle_error "Espera de SSH" "La VM $ip no levantó el puerto 22."
         fi
     done
-    echo -e "${GREEN} ¡Listo!${NC}"
+    
+    # --- LA MEJORA SRE ---
+    # Limpiamos la IP de known_hosts para evitar el error que viste
+    ssh-keygen -f "$HOME/.ssh/known_hosts" -R "$ip" > /dev/null 2>&1
+    echo -e "${GREEN} ¡Listo y purgado!${NC}"
 }
 
 # ==============================================================================
@@ -122,6 +126,9 @@ with open('lab-state.yaml') as f:
             for ip in $VMS_IPS; do
                 wait_for_ssh "$ip"
             done
+	    # Tiempo de gracia para que Cloud-init deje de reiniciar SSH
+            echo -e "${GREEN}[*] Estabilizando servicios internos (15s)...${NC}"
+            sleep 15
         fi
 
         # --- 5. CONFIGURACIÓN (ANSIBLE NODES) ---
