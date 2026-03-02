@@ -25,6 +25,10 @@
   hosts: eve-monitor
   become: yes
   gather_facts: true
+  # --- CARGAMOS LOS SECRETOS AQUÍ ---
+  vars:
+    # Usamos el lookup de sops para traer los datos del archivo cifrado
+    secretos: "{{ lookup('community.sops.sops', '../../secrets.enc.yaml') | from_yaml }}"
 
   tasks:
     - name: "1. Instalar VictoriaMetrics y Grafana en Alpine"
@@ -61,12 +65,16 @@
         dest: /etc/conf.d/victoria-metrics
       notify: Restart VictoriaMetrics
 
-    - name: "4. Inyectar Password de Grafana desde SOPS"
+    - name: "4. Inyectar Password de Grafana"
       ansible.builtin.lineinfile:
         path: /etc/grafana/grafana.ini
         regexp: '^;admin_password ='
-        line: "admin_password = {{ grafana_admin_password }}"
-      no_log: true # Por seguridad no mostramos el pass en el log
+        # Ahora usamos la variable dentro del objeto 'secretos'
+        line: "admin_password = {{ secretos.grafana_admin_password }}"
+        owner: "root"
+        group: "grafana"
+        mode: "0640"
+      no_log: true
 
     - name: "5. Iniciar Servicios"
       ansible.builtin.service:
