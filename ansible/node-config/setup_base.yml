@@ -19,7 +19,7 @@
     - name: "1.2 Clasificar hosts y evadir SSH Fingerprint"
       ansible.builtin.add_host:
         name: "{{ item.nombre }}"
-        groups: 
+        groups:
           - "eve_dynamic_nodes"
           - "type_{{ item.tipo | default('vm') }}" # Magia pura: type_vm, type_lxc, type_fisico
         ansible_host: "{{ item.red.ip.split('/')[0] }}"
@@ -69,4 +69,3 @@
             enabled: yes
       # Condición dinámica basada en el grupo que creaste
       when: "'type_vm' in group_names"
-
