@@ -26,7 +26,7 @@ entornos:
         protocolo: "tcp"
         descripcion: "GUI Reze"
 
-  # === MÁQUINAS VIRTUALES ===
+  # === VMs y LXCs ===   
   - nombre: "eve-test-01"
     estado: "presente"
     tipo: "vm"
@@ -39,7 +39,21 @@ entornos:
     recursos:
       cores: 2
       memoria: 2048
+      disco: 20
     firewall_externo:
       - puerto: 22
         protocolo: "tcp"
         descripcion: "SSH Admin"
+
+  - nombre: "lxc-ligero-01"
+    estado: "presente"
+    tipo: "lxc"
+    nodo_proxmox: "reze"
+    vmid: 200
+    red:
+      ip: "192.168.1.51/24"
+      gateway: "192.168.1.30"
+    recursos:
+      cores: 1
+      memoria: 512
+      disco: 8
