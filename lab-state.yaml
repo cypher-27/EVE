@@ -26,7 +26,7 @@ entornos:
         protocolo: "tcp"
         descripcion: "GUI Reze"
 
-  # === VMs y LXCs ===   
+  # === VMs y LXCs ===
   - nombre: "eve-test-01"
     estado: "presente"
     tipo: "vm"
@@ -57,3 +57,4 @@ entornos:
       cores: 1
       memoria: 512
       disco: 8
+
