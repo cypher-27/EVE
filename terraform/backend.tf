@@ -5,8 +5,7 @@ terraform {
     bucket         = "devilhunters-terraform-state"
     key            = "lab/terraform.tfstate"
     region         = "us-east-1"
-    dynamodb_table = "devilhunters-terraform-lock"
+    use_lockfile   = true
     encrypt        = true
   }
 }
-
