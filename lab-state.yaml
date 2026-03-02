@@ -38,8 +38,15 @@ entornos:
       gateway: "192.168.1.30"
     recursos:
       cores: 2
-      memoria: 16000
+      memoria: 2048
     firewall_externo:
       - puerto: 22
         protocolo: "tcp"
         descripcion: "SSH Admin"
+
+  - nombre: "intruder-vm"
+    estado: "presente"
+    tipo: "vm"
+    red:
+      ip: "192.168.1.30/24"
+
