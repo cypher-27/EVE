@@ -26,7 +26,7 @@
         # Aplicamos el bypass de SSH Fingerprint aquí también
         ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
       loop: "{{ contrato.entornos }}"
-      when: 
+      when:
         - item.estado == "presente"
         - item.tipo == "gateway"
 
@@ -61,4 +61,3 @@
       ansible.builtin.systemd:
         name: eve-firewall.service
         state: restarted
-
