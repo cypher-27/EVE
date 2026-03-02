@@ -14,9 +14,10 @@ export ANSIBLE_HOST_KEY_CHECKING=False
 
 # --- AUTO-LOAD SECRETS ---
 if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
-    echo -e "${GREEN}[*] Secretos no detectados en el entorno. Cargando vía SOPS...${NC}"
-    # Usamos eval para exportar las variables desencriptadas a la sesión actual del script
-    eval $(sops -d secrets.enc.env | sed 's/^export //') || handle_error "Carga de Secretos" "No se pudo desencriptar secrets.enc.env"
+    echo -e "${GREEN}[*] Secretos no detectados. Cargando vía SOPS...${NC}"
+    # No necesitamos sed si el archivo ya tiene 'export'
+    # Simplemente evaluamos lo que escupe SOPS
+    source <(sops -d secrets.enc.env) || handle_error "Carga de Secretos" "No se pudo desencriptar secrets.enc.env"
 fi
 
 # --- FUNCIONES DE SOPORTE ---
