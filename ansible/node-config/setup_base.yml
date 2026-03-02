@@ -26,7 +26,7 @@
         ansible_user: "admin"
         ansible_ssh_private_key_file: "~/.ssh/eve_admin"
         # Tu aporte: Bypass de seguridad para máquinas recién nacidas
-        ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o CheckHostIP=no"
       loop: "{{ contrato.entornos }}"
       # Solo parseamos los que existen, sin importar su tipo
       when: item.estado == "presente"
@@ -41,6 +41,10 @@
   gather_facts: true
 
   tasks:
+    - name: "2.0 Test de Conexión (Sin Sudo)"
+      ansible.builtin.ping:
+      become: no # Probamos primero si podemos entrar sin ser root
+
     - name: "2.1 Actualizar repositorios y sistema"
       apt:
         update_cache: yes

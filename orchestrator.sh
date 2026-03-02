@@ -133,9 +133,13 @@ with open('lab-state.yaml') as f:
 
         # --- 5. CONFIGURACIÓN (ANSIBLE NODES) ---
         echo -e "${GREEN}[5/5] Configurando Software y Roles...${NC}"
+        # Capturamos el error pero lo imprimimos ANTES de salir
         NODE_OUTPUT=$(ansible-playbook -i localhost, ansible/node-config/setup_base.yml 2>&1)
         if [ $? -ne 0 ]; then
-            handle_error "Ansible Node Config" "${NODE_OUTPUT}"
+            echo -e "${RED}--- LOG DE ERROR DE ANSIBLE (INVESTIGACIÓN) ---${NC}"
+            echo "$NODE_OUTPUT"
+            echo -e "${RED}-----------------------------------------------${NC}"
+            handle_error "Ansible Node Config" "Fallo en la configuración. Revisa el log arriba."
         fi
 
         # --- FINALIZACIÓN ---
