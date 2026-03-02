@@ -93,7 +93,7 @@ resource "proxmox_lxc" "entorno_lxc" {
   
   # Usamos nuestro nuevo Golden Template si es Alpine
   ostype       = each.value.os == "alpine" ? "alpine" : "debian"
-  ostemplate   = each.value.os == "alpine" ? "local:vztmpl/alpine-eve-custom.tar.xz" : "local:vztmpl/debian-12-standard_12.12-1_amd64.tar.zst"
+  ostemplate   = each.value.os == "alpine" ? "local:vztmpl/alpine-eve-custom.tar.zst" : "local:vztmpl/debian-12-standard_12.12-1_amd64.tar.zst"
   
   unprivileged = true
   password     = random_password.lxc_password[each.key].result
