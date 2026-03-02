@@ -1,13 +1,6 @@
 # /etc/conf.d/victoria-metrics
 # Generado automáticamente por el Orquestador EVE
 
-ARGS="-storageDataPath=/var/lib/victoria-metrics -retentionPeriod=7d -promscrape.configInline='
-scrape_configs:
-  - job_name: \"eve-cluster\"
-    static_configs:
-      - targets:
-{% for host in groups['targets_to_monitor'] %}
-        - \"{{ hostvars[host].ansible_host }}:9100\"
-{% endfor %}
-'"
+# Le decimos que guarde en el HDD de 50GB y que lea el archivo de scrape que generamos en el paso 3.1
+ARGS="-storageDataPath=/var/lib/victoria-metrics -retentionPeriod=7d -promscrape.config=/etc/victoria-metrics-scrape.yml"
 

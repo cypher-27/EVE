@@ -39,13 +39,23 @@
       ansible.builtin.file:
         path: /var/lib/victoria-metrics
         state: directory
-        # Cambiamos a root para que no falle el lookup, 
-        # el binario de VictoriaMetrics hará el resto al arrancar
         owner: root 
         group: root
         mode: '0755'
 
-    - name: "3. Generar Configuración de Auto-Discovery (Jinja2)"
+    # --- NUEVA LÓGICA DE AUTO-DISCOVERY ---
+    - name: "2.5 Leer el contrato maestro para auto-discovery"
+      ansible.builtin.include_vars:
+        file: "../../lab-state.yaml"
+        name: lab_state
+
+    - name: "3.1 Generar archivo YAML de Scrape (Limpio)"
+      ansible.builtin.template:
+        src: scrape.yml.j2
+        dest: /etc/victoria-metrics-scrape.yml
+      notify: Restart VictoriaMetrics
+
+    - name: "3.2 Configurar opciones del servicio de arranque"
       ansible.builtin.template:
         src: victoria-metrics-opts.j2
         dest: /etc/conf.d/victoria-metrics
@@ -72,4 +82,3 @@
       ansible.builtin.service:
         name: victoria-metrics
         state: restarted
-

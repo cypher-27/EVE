@@ -1,0 +1,10 @@
+scrape_configs:
+  - job_name: "eve-cluster"
+    static_configs:
+      - targets:
+{% for node in lab_state.entornos %}
+{% if node.estado == "presente" and node.tipo in ["vm", "lxc"] %}
+        - "{{ node.red.ip.split('/')[0] }}:9100"
+{% endif %}
+{% endfor %}
+
