@@ -67,7 +67,7 @@
 
     - name: "4. Inyectar Password de Grafana"
       ansible.builtin.lineinfile:
-        path: /etc/grafana/grafana.ini
+        path: /etc/grafana.ini
         regexp: '^;admin_password ='
         # Ahora usamos la variable dentro del objeto 'secretos'
         line: "admin_password = {{ secretos.grafana_admin_password }}"
