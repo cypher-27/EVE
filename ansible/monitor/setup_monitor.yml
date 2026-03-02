@@ -1,4 +1,4 @@
-# 1. Fase de Inventario (Descubrimiento Total)
+## Fase 1
 - name: "Fase 1: Descubrimiento de Nodos para el Espejo"
   hosts: localhost
   connection: local
@@ -11,7 +11,6 @@
     - name: "Poblar inventario dinámico"
       add_host:
         name: "{{ item.nombre }}"
-        # Clasificamos para que el monitor sepa a quién "scrapear"
         groups: "{{ 'eve_monitor_group' if item.nombre == 'eve-monitor' else 'targets_to_monitor' }}"
         ansible_host: "{{ item.red.ip.split('/')[0] }}"
         ansible_user: "root"
@@ -20,79 +19,68 @@
       loop: "{{ contrato.entornos }}"
       when: item.estado == 'presente' and item.tipo in ['vm', 'lxc']
 
-# 2. Fase de Configuración Real
+## Fase 2
 - name: "Fase 2.6: Configuración del Espejo (Observabilidad)"
   hosts: eve-monitor
   become: yes
   gather_facts: true
-  # --- CARGAMOS LOS SECRETOS AQUÍ ---
+
   vars:
-    # Usamos el lookup de sops para traer los datos del archivo cifrado
     secretos: "{{ lookup('community.sops.sops', '../../secrets.enc.yaml') | from_yaml }}"
 
   tasks:
-    - name: "1. Instalar VictoriaMetrics y Grafana en Alpine"
+    - name: "1. Instalar VictoriaMetrics y Grafana"
       community.general.apk:
-        name: 
-          - victoria-metrics
-          - grafana
+        name: [victoria-metrics, grafana]
         update_cache: yes
         state: present
 
-    - name: "2. Asegurar directorio de datos en el HDD (Mountpoint)"
+    - name: "2. FIX: Crear directorios de Grafana (Alpine no los crea)"
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: grafana
+        mode: '0755'
+      loop:
+        - /etc/grafana/provisioning/datasources
+        - /etc/grafana/provisioning/dashboards
+
+    - name: "3. FIX: Permisos del HDD para VictoriaMetrics"
       ansible.builtin.file:
         path: /var/lib/victoria-metrics
         state: directory
-        owner: nobody 
+        owner: nobody
         group: nobody
-        mode: '0755'
+        mode: '0775'
 
-    # --- NUEVA LÓGICA DE AUTO-DISCOVERY ---
-    - name: "2.5 Leer el contrato maestro para auto-discovery"
-      ansible.builtin.include_vars:
-        file: "../../lab-state.yaml"
-        name: lab_state
-
-    - name: "3.1 Generar archivo YAML de Scrape (Limpio)"
+    - name: "4. Generar Archivo de Scrape y asegurar lectura"
       ansible.builtin.template:
         src: scrape.yml.j2
         dest: /etc/victoria-metrics-scrape.yml
+        # IMPORTANTE: nobody debe poder leerlo o VM crashea
+        owner: root
+        group: nobody
+        mode: '0640' 
       notify: Restart VictoriaMetrics
 
-    - name: "3.2 Configurar opciones del servicio de arranque"
+    - name: "5. Configurar opciones de arranque (Binding IPv4)"
       ansible.builtin.template:
         src: victoria-metrics-opts.j2
         dest: /etc/conf.d/victoria-metrics
       notify: Restart VictoriaMetrics
 
-    - name: "4. Inyectar Password de Grafana"
+    - name: "6. Configurar Grafana (.ini y Password)"
       ansible.builtin.lineinfile:
         path: /etc/grafana.ini
-        regexp: '^;admin_password ='
-        # Ahora usamos la variable dentro del objeto 'secretos'
-        line: "admin_password = {{ secretos.grafana_admin_password }}"
-        owner: "root"
-        group: "grafana"
-        mode: "0640"
-      no_log: false
-
-    - name: "4.1 Forzar a Grafana a escuchar en todas las interfaces"
-      ansible.builtin.lineinfile:
-        path: /etc/conf.d/grafana
-        regexp: '127.0.0.1'
-        line: 'grafana_opts="--cfg:server.http_addr=0.0.0.0"'
-      notify: Restart Grafana
-
-    - name: "5. Iniciar Servicios"
-      ansible.builtin.service:
-        name: "{{ item }}"
-        state: started
-        enabled: yes
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
       loop:
-        - victoria-metrics
-        - grafana
+        - { regexp: '^;admin_password =', line: "admin_password = {{ secretos.grafana_admin_password }}" }
+        - { regexp: '127.0.0.1', line: 'grafana_opts="--cfg:server.http_addr=0.0.0.0"' }
+      no_log: true
 
-    - name: "6. Provisionar Data Source de VictoriaMetrics"
+    - name: "7. Provisionar Data Source (Auto-connect)"
       ansible.builtin.copy:
         dest: /etc/grafana/provisioning/datasources/victoria-metrics.yaml
         content: |
@@ -109,13 +97,20 @@
         mode: '0640'
       notify: Restart Grafana
 
+    - name: "8. Iniciar y habilitar servicios"
+      ansible.builtin.service:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      loop: [victoria-metrics, grafana]
+
   handlers:
     - name: Restart VictoriaMetrics
       ansible.builtin.service:
         name: victoria-metrics
         state: restarted
-
     - name: Restart Grafana
       ansible.builtin.service:
         name: grafana
         state: restarted
+
