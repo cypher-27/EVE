@@ -22,6 +22,7 @@
         groups: "gateway_nodes"
         ansible_host: "{{ item.red.ip.split('/')[0] }}"
         ansible_user: "doom" # O el usuario correspondiente
+        ansible_ssh_private_key_file: "~/.ssh/id_ed25519_eve"
         # Aplicamos el bypass de SSH Fingerprint aquí también
         ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
       loop: "{{ contrato.entornos }}"
