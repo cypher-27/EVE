@@ -71,22 +71,13 @@ case "$1" in
     --destroy)
         echo -e "${RED}⚠️  PELIGRO: Vas a destruir TODA la infraestructura de EVE Edge.${NC}"
         read -p "¿Estás totalmente seguro? (y/n): " confirm
-        if [[ $confirm != [yY] ]]; then
-            echo "Operación cancelada."
-            exit 0
-        fi
+        if [[ $confirm != [yY] ]]; then exit 0; fi
 
         send_telegram "💀 *AVISO*: Iniciando destrucción total del laboratorio..."
 
-        # 1. LIMPIEZA DE RED (SDN)
-        echo -e "${GREEN}[1/2] Limpiando reglas de firewall en el Gateway...${NC}"
-        ansible-playbook -i localhost, ansible/sdn-gateway/cleanup-firewall.yml > /dev/null
-        if [ $? -ne 0 ]; then
-            handle_error "Limpieza SDN" "No se pudieron purgar las reglas del firewall."
-        fi
-
-        # 2. DESTRUCCIÓN DE INFRAESTRUCTURA (TERRAFORM)
-        echo -e "${GREEN}[2/2] Ejecutando Terraform Destroy...${NC}"
+        # 1. DESTRUCCIÓN DE INFRAESTRUCTURA (TERRAFORM) PRIMERO
+        # Mientras aún tenemos las rutas de red activas en el Gateway
+        echo -e "${GREEN}[1/2] Ejecutando Terraform Destroy...${NC}"
         cd terraform
         TF_DESTROY=$(terraform destroy -auto-approve 2>&1)
         if [ $? -ne 0 ]; then
@@ -94,8 +85,13 @@ case "$1" in
         fi
         cd ..
 
+        # 2. LIMPIEZA DE RED (SDN) AL FINAL
+        echo -e "${GREEN}[2/2] Limpiando reglas de firewall en el Gateway...${NC}"
+        # IMPORTANTE: Solo limpiamos si Terraform ya terminó de borrar las VMs
+        ansible-playbook -i localhost, ansible/sdn-gateway/cleanup-firewall.yml > /dev/null
+        
         echo -e "${GREEN}¡Laboratorio destruido con éxito!${NC}"
-        send_telegram "💀 *LABORATORIO DESTRUIDO*: La infraestructura y las reglas de red han sido eliminadas."
+        send_telegram "💀 *LABORATORIO DESTRUIDO*."
         exit 0
         ;;
     *)
@@ -150,7 +146,7 @@ with open('lab-state.yaml') as f:
                 wait_for_ssh "$ip"
             done
 	    # Tiempo de gracia para que Cloud-init deje de reiniciar SSH
-            echo -e "${GREEN}[*] Estabilizando servicios internos (15s)...${NC}"
+            echo -e "${GREEN}[*] Estabilizando servicios internos (30s)...${NC}"
             sleep 30
         fi
 
