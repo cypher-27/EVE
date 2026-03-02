@@ -34,12 +34,14 @@
         update_cache: yes
         state: present
 
-    - name: "2. Crear directorio de datos en el HDD (Mountpoint)"
+    - name: "2. Asegurar directorio de datos en el HDD (Mountpoint)"
       ansible.builtin.file:
         path: /var/lib/victoria-metrics
         state: directory
-        owner: victoria-metrics
-        group: victoria-metrics
+        # Cambiamos a root para que no falle el lookup, 
+        # el binario de VictoriaMetrics hará el resto al arrancar
+        owner: root 
+        group: root
         mode: '0755'
 
     - name: "3. Generar Configuración de Auto-Discovery (Jinja2)"
