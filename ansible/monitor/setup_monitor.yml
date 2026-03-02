@@ -108,6 +108,25 @@
         enabled: yes
       loop: [victoria-metrics, grafana]
 
+    # --- PROVISIONING DE DASHBOARDS ---
+    - name: "7.1 Configurar el Provider de Dashboards"
+      ansible.builtin.template:
+        src: dashboard-provider.yml.j2
+        dest: /etc/grafana/provisioning/dashboards/eve-provider.yaml
+        owner: root
+        group: grafana
+        mode: '0640'
+      notify: Restart Grafana
+
+    - name: "7.2 Inyectar JSON del Dashboard Maestro"
+      ansible.builtin.copy:
+        src: files/node-exporter-dash.json
+        dest: /etc/grafana/provisioning/dashboards/node-exporter-dash.json
+        owner: root
+        group: grafana
+        mode: '0640'
+      notify: Restart Grafana
+
   handlers:
     - name: Restart VictoriaMetrics
       ansible.builtin.service:
