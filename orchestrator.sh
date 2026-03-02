@@ -12,6 +12,13 @@ NC='\033[0m'
 # Seguridad SSH
 export ANSIBLE_HOST_KEY_CHECKING=False
 
+# --- AUTO-LOAD SECRETS ---
+if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
+    echo -e "${GREEN}[*] Secretos no detectados en el entorno. Cargando vía SOPS...${NC}"
+    # Usamos eval para exportar las variables desencriptadas a la sesión actual del script
+    eval $(sops -d secrets.enc.env | sed 's/^export //') || handle_error "Carga de Secretos" "No se pudo desencriptar secrets.enc.env"
+fi
+
 # --- FUNCIONES DE SOPORTE ---
 
 send_telegram() {
@@ -69,10 +76,13 @@ case "$1" in
         
         # --- 1. PRE-FLIGHT CHECKS ---
         echo -e "${GREEN}[1/5] Ejecutando Linting y Sintaxis...${NC}"
-        cd terraform && terraform validate > /dev/null || handle_error "Linting Terraform" "Error de sintaxis en .tf"
-        cd ..
-        ansible-playbook ansible/sdn-gateway/deploy-firewall.yml --syntax-check > /dev/null || handle_error "Linting Ansible SDN" "Sintaxis incorrecta en red"
-        ansible-playbook ansible/node-config/setup_base.yml --syntax-check > /dev/null || handle_error "Linting Ansible Node" "Sintaxis incorrecta en config"
+        # Validar Terraform
+        (cd terraform && terraform validate) > /dev/null || handle_error "Linting Terraform" "Error en .tf"
+        
+        # Validar Ansible (Silenciamos warnings de inventario vacío en el linting)
+        ansible-playbook ansible/sdn-gateway/deploy-firewall.yml --syntax-check > /dev/null 2>&1 || handle_error "Linting Ansible SDN" "Error en red"
+        ansible-playbook ansible/node-config/setup_base.yml --syntax-check > /dev/null 2>&1 || handle_error "Linting Ansible Node" "Error en config"
+
 
         # --- 2. INFRAESTRUCTURA (TERRAFORM) ---
         echo -e "${GREEN}[2/5] Desplegando en Proxmox con Terraform...${NC}"
@@ -86,11 +96,13 @@ case "$1" in
 
         # --- 3. RED (ANSIBLE SDN) ---
         echo -e "${GREEN}[3/5] Configurando Firewall en SDN Gateway...${NC}"
+        # Usamos -e para pasar la ruta absoluta si fuera necesario, pero playbook_dir debería bastar
         SDN_OUTPUT=$(ansible-playbook -i localhost, ansible/sdn-gateway/deploy-firewall.yml 2>&1)
         if [ $? -ne 0 ]; then
-            handle_error "Ansible SDN" "${SDN_OUTPUT}"
+            # Imprimimos el log en la terminal antes de morir para que veas qué pasó
+            echo "$SDN_OUTPUT"
+            handle_error "Ansible SDN" "Revisa los logs arriba."
         fi
-
         # --- 4. ESPERA INTELIGENTE (WAIT FOR SSH) ---
         echo -e "${GREEN}[4/5] Comprobando conectividad de las VMs...${NC}"
         # Magia negra: Extraemos las IPs de las VMs 'presentes' directo del YAML usando Python
