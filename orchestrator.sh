@@ -128,7 +128,7 @@ with open('lab-state.yaml') as f:
             done
 	    # Tiempo de gracia para que Cloud-init deje de reiniciar SSH
             echo -e "${GREEN}[*] Estabilizando servicios internos (15s)...${NC}"
-            sleep 15
+            sleep 30
         fi
 
         # --- 5. CONFIGURACIÓN (ANSIBLE NODES) ---
