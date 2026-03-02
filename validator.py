@@ -3,8 +3,8 @@ import sys
 
 # --- CONFIGURACIÓN DE LÍMITES (BASADO EN TUS CAPTURAS) ---
 LIMITES = {
-    "cpu_total": 12,
-    "ram_total_mb": 12800, # ~12.5 GiB para dejar margen al OS
+    "cpu_total": 11,
+    "ram_total_mb": 12500,
     "nodos": ["makima", "reze"]
 }
 
