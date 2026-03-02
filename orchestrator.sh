@@ -107,26 +107,26 @@ case "$1" in
         ansible-playbook ansible/sdn-gateway/deploy-firewall.yml --syntax-check > /dev/null 2>&1 || handle_error "Linting Ansible SDN" "Error en red"
         ansible-playbook ansible/node-config/setup_base.yml --syntax-check > /dev/null 2>&1 || handle_error "Linting Ansible Node" "Error en config"
 
+        # --- 2. RED (ANSIBLE SDN) PRIMERO ---
+        echo -e "${GREEN}[2/5] Configurando Firewall en SDN Gateway...${NC}"
+        SDN_OUTPUT=$(ansible-playbook -i localhost, ansible/sdn-gateway/deploy-firewall.yml 2>&1)
+        if [ $? -ne 0 ]; then
+            echo "$SDN_OUTPUT"
+            handle_error "Ansible SDN" "Revisa los logs arriba."
+        fi
 
-        # --- 2. INFRAESTRUCTURA (TERRAFORM) ---
-        echo -e "${GREEN}[2/5] Desplegando en Proxmox con Terraform...${NC}"
+        # --- 3. INFRAESTRUCTURA (TERRAFORM) DESPUÉS ---
+        echo -e "${GREEN}[3/5] Desplegando en Proxmox con Terraform...${NC}"
         send_telegram "🚀 Iniciando despliegue de infraestructura..."
         cd terraform
         TF_OUTPUT=$(terraform apply -auto-approve 2>&1)
         if [ $? -ne 0 ]; then
-            handle_error "Terraform Apply" "${TF_OUTPUT}"
+            echo -e "${RED}--- LOG DE ERROR DE TERRAFORM ---${NC}"
+            echo "$TF_OUTPUT"
+            echo -e "${RED}---------------------------------${NC}"
+            handle_error "Terraform Apply" "Error en el despliegue. Revisa el log arriba."
         fi
         cd ..
-
-        # --- 3. RED (ANSIBLE SDN) ---
-        echo -e "${GREEN}[3/5] Configurando Firewall en SDN Gateway...${NC}"
-        # Usamos -e para pasar la ruta absoluta si fuera necesario, pero playbook_dir debería bastar
-        SDN_OUTPUT=$(ansible-playbook -i localhost, ansible/sdn-gateway/deploy-firewall.yml 2>&1)
-        if [ $? -ne 0 ]; then
-            # Imprimimos el log en la terminal antes de morir para que veas qué pasó
-            echo "$SDN_OUTPUT"
-            handle_error "Ansible SDN" "Revisa los logs arriba."
-        fi
         # --- 4. ESPERA INTELIGENTE (WAIT FOR SSH) ---
         echo -e "${GREEN}[4/5] Comprobando conectividad de las VMs...${NC}"
         # Magia negra: Extraemos las IPs de las VMs 'presentes' directo del YAML usando Python
