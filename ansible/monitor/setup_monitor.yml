@@ -40,27 +40,19 @@
         update_cache: yes
         state: present
 
-    - name: "2. FIX: Crear estructura de carpetas (Alpine Fix)"
+    - name: "2. FIX: Crear directorios de Victoria y Grafana"
       ansible.builtin.file:
-        path: "{{ item }}"
+        path: "{{ item.path }}"
         state: directory
-        owner: root
-        group: grafana
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
         mode: '0755'
       loop:
-        - /var/lib/victoria-metrics
-        - /etc/grafana/provisioning/datasources
-        - /etc/grafana/provisioning/dashboards
+        - { path: '/var/lib/victoria-metrics', owner: 'victoriametrics', group: 'victoriametrics' }
+        - { path: '/var/lib/grafana/provisioning/datasources', owner: 'grafana', group: 'grafana' }
+        - { path: '/var/lib/grafana/provisioning/dashboards', owner: 'grafana', group: 'grafana' }
 
-    - name: "3. FIX: Permisos HDD para VictoriaMetrics"
-      ansible.builtin.file:
-        path: /var/lib/victoria-metrics
-        state: directory
-        owner: victoriametrics
-        group: victoriametrics
-        mode: '0775'
-
-    - name: "4. Generar Archivos de Configuración"
+    - name: "3. Generar Archivos de Configuración de VictoriaMetrics"
       ansible.builtin.template:
         src: "{{ item.src }}"
         dest: "{{ item.dest }}"
@@ -72,7 +64,7 @@
         - { src: 'victoria-metrics-opts.j2', dest: '/etc/conf.d/victoria-metrics' }
       notify: Restart VictoriaMetrics
 
-    - name: "5. Configurar Grafana (.ini y Provisioning Path)"
+    - name: "4. Configurar Grafana (.ini y Password)"
       ansible.builtin.lineinfile:
         path: /etc/grafana.ini
         regexp: "{{ item.regexp }}"
@@ -80,13 +72,12 @@
       loop:
         - { regexp: '^;admin_password =', line: "admin_password = {{ secretos.grafana_admin_password }}" }
         - { regexp: '127.0.0.1', line: 'grafana_opts="--cfg:server.http_addr=0.0.0.0"' }
-        # Le decimos explícitamente a Grafana donde buscar el provisioning
-        - { regexp: '^;provisioning =', line: 'provisioning = /etc/grafana/provisioning' }
+        # NO necesitamos forzar la ruta aquí porque Alpine usa /var/lib/grafana por defecto
       no_log: true
 
-    - name: "6. Inyectar Data Source (Auto-connect)"
+    - name: "5. Inyectar Data Source (Ruta de Alpine)"
       ansible.builtin.copy:
-        dest: /etc/grafana/provisioning/datasources/victoria-metrics.yaml
+        dest: /var/lib/grafana/provisioning/datasources/victoria-metrics.yaml
         content: |
           apiVersion: 1
           datasources:
@@ -101,25 +92,7 @@
         mode: '0640'
       notify: Restart Grafana
 
-    - name: "7. Iniciar y habilitar servicios"
-      ansible.builtin.service:
-        name: "{{ item }}"
-        state: started
-        enabled: yes
-      loop: [victoria-metrics, grafana]
-
-    - name: "2. FIX: Crear estructura de carpetas en el Path de Datos (Alpine Override)"
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: directory
-        owner: grafana
-        group: grafana
-        mode: '0755'
-      loop:
-        - /var/lib/grafana/provisioning/datasources
-        - /var/lib/grafana/provisioning/dashboards
-
-    - name: "7.1 Configurar el Provider de Dashboards"
+    - name: "6. Configurar el Provider de Dashboards (Ruta de Alpine)"
       ansible.builtin.template:
         src: dashboard-provider.yml.j2
         dest: /var/lib/grafana/provisioning/dashboards/eve-provider.yaml
@@ -128,7 +101,7 @@
         mode: '0640'
       notify: Restart Grafana
 
-    - name: "7.2 Inyectar JSON del Dashboard Maestro"
+    - name: "7. Inyectar JSON del Dashboard Maestro"
       ansible.builtin.copy:
         src: files/node-exporter-dash.json
         dest: /var/lib/grafana/provisioning/dashboards/node-exporter-dash.json
@@ -136,6 +109,13 @@
         group: grafana
         mode: '0640'
       notify: Restart Grafana
+
+    - name: "8. Iniciar y habilitar servicios"
+      ansible.builtin.service:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      loop: [victoria-metrics, grafana]
 
   handlers:
     - name: Restart VictoriaMetrics
@@ -146,3 +126,4 @@
       ansible.builtin.service:
         name: grafana
         state: restarted
+
