@@ -122,6 +122,10 @@ case "$1" in
         exit 0
         ;;
     *)
+	# --- 0. VALIDACIÓN DE CONTRATO INTELIGENTE ---
+        echo -e "${GREEN}[0/5] Validando recursos del cluster...${NC}"
+        python3 validator.py || handle_error "Validación de Contrato" "El lab-state.yaml viola las leyes del cluster."
+
         # --- 1. PRE-FLIGHT CHECKS ---
         CURRENT_STEP="Pre-flight Checks"
         echo -e "${GREEN}[1/5] Ejecutando Linting y Sintaxis...${NC}"
