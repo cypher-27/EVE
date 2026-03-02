@@ -43,8 +43,8 @@
       ansible.builtin.file:
         path: /var/lib/victoria-metrics
         state: directory
-        owner: root 
-        group: root
+        owner: nobody 
+        group: nobody
         mode: '0755'
 
     # --- NUEVA LÓGICA DE AUTO-DISCOVERY ---
@@ -91,6 +91,23 @@
       loop:
         - victoria-metrics
         - grafana
+
+    - name: "6. Provisionar Data Source de VictoriaMetrics"
+      ansible.builtin.copy:
+        dest: /etc/grafana/provisioning/datasources/victoria-metrics.yaml
+        content: |
+          apiVersion: 1
+          datasources:
+            - name: VictoriaMetrics
+              type: prometheus
+              url: http://127.0.0.1:8428
+              access: proxy
+              isDefault: true
+              editable: true
+        owner: root
+        group: grafana
+        mode: '0640'
+      notify: Restart Grafana
 
   handlers:
     - name: Restart VictoriaMetrics
