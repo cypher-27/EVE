@@ -110,6 +110,13 @@
         mode: '0640'
       notify: Restart Grafana
 
+    - name: "7.5 FIX: Mutilar 'command_user' para forzar Root (Bug Alpine LXC)"
+      ansible.builtin.lineinfile:
+        path: /etc/init.d/victoria-metrics
+        regexp: '^command_user='
+        line: '#command_user=victoriametrics:victoriametrics # Mutilado por EVE para forzar Root'
+      notify: Restart VictoriaMetrics
+
     - name: "8. Iniciar y habilitar servicios"
       ansible.builtin.service:
         name: "{{ item }}"
@@ -126,4 +133,3 @@
       ansible.builtin.service:
         name: grafana
         state: restarted
-
