@@ -104,10 +104,24 @@ resource "proxmox_lxc" "entorno_lxc" {
 
   cores  = each.value.recursos.cores
   memory = each.value.recursos.memoria
-
+  
+  # Disco Principal (Root)
   rootfs {
     storage = "local-zfs"
     size    = "${each.value.recursos.disco}G" 
+  }
+
+  # Disco de Datos (Opcional - Solo si existe en el YAML)
+  # Usamos un bloque dinámico para que no falle si el LXC no tiene disco_datos
+  dynamic "mountpoint" {
+    for_each = lookup(each.value.recursos, "disco_datos", null) != null ? [1] : []
+    content {
+      slot    = 1
+      key     = "mp1"
+      storage = each.value.recursos.disco_datos.storage
+      mp      = "/var/lib/victoria-metrics" # Donde VM guarda los datos
+      size    = each.value.recursos.disco_datos.size
+    }
   }
 
   network {

@@ -62,3 +62,26 @@ entornos:
       - puerto: 22
         protocolo: "tcp"
         descripcion: "SSH LXC"
+
+  - nombre: "eve-monitor"
+    estado: "presente"
+    tipo: "lxc"
+    nodo_proxmox: "makima"
+    vmid: 300
+    red:
+      ip: "192.168.1.40/24"
+      gateway: "192.168.1.30"
+    recursos:
+      cores: 1
+      memoria: 512
+      disco: 8
+      disco_datos:
+        storage: "hdd_data"
+        size: "50G"
+    firewall_externo:
+      - puerto: 3000
+        protocolo: "tcp"
+        descripcion: "Grafana Web"
+      - puerto: 8428
+        protocolo: "tcp"
+        descripcion: "VictoriaMetrics Ingest"
