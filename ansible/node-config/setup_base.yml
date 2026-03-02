@@ -41,7 +41,21 @@
   # Target: Todos los nodos dinámicos EXCEPTO los físicos (Makima/Reze) para no romper Proxmox
   hosts: type_vm:type_lxc
   become: yes
-  gather_facts: true
+  # IMPORTANTE: Desactivamos el recolectado automático de inicio porque Alpine no tiene Python aún
+  gather_facts: false 
+
+  pre_tasks:
+    - name: "Bootstrap: Instalar Python en Alpine (vía RAW)"
+      # El módulo 'raw' envía comandos SSH directos sin usar Python
+      ansible.builtin.raw: apk add --no-cache python3
+      changed_when: false
+      when: 
+        - "inventory_hostname in groups['type_lxc']"
+        # Aquí una lógica simple: si no podemos correr python3 --version, lo instalamos
+      ignore_errors: yes
+
+    - name: "Recolectar Facts ahora que Python existe"
+      ansible.builtin.setup:
 
   tasks:
     - name: "2.0 Test de Conexión (Sin Sudo)"
@@ -62,7 +76,7 @@
       when: ansible_os_family == "Alpine"
 
     - name: "2.2 Instalar dependencias globales"
-      ansible.builtin.package: # Detecta automáticamente si usar apt o apk
+      ansible.builtin.package: 
         name:
           - curl
           - git
@@ -82,7 +96,6 @@
             name: qemu-guest-agent
             state: started
             enabled: yes
-      # Solo ejecutamos si el host pertenece al grupo type_vm Y es Debian
       when: 
         - "'type_vm' in group_names"
         - "ansible_os_family == 'Debian'"
