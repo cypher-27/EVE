@@ -64,24 +64,19 @@
         - { src: 'victoria-metrics-opts.j2', dest: '/etc/conf.d/victoria-metrics' }
       notify: Restart VictoriaMetrics
 
-    - name: "4. Configurar Grafana (Enlace 0.0.0.0 en el .ini)"
+    - name: "4. Configurar Password de Admin en .ini"
       ansible.builtin.lineinfile:
         path: /etc/grafana.ini
-        regexp: '^;http_addr ='
-        line: "http_addr = 0.0.0.0"
-      notify: Restart Grafana
-
-    - name: "4.1 Configurar Password de Admin en .ini"
-      ansible.builtin.lineinfile:
-        path: /etc/grafana.ini
-        regexp: '^;admin_password ='
+        # Regex tolerante: busca la línea tenga o no punto y coma, y sin importar los espacios
+        regexp: '^[;#]?\s*admin_password\s*='
         line: "admin_password = {{ secretos.grafana_admin_password }}"
       no_log: true
 
-    - name: "4.2 FIX: Forzar 0.0.0.0 en el archivo de opciones de Alpine (Override)"
+    - name: "4.1 FIX: Liberar a Grafana de 127.0.0.1 (Alpine Override)"
       ansible.builtin.copy:
         dest: /etc/conf.d/grafana
-        content: 'grafana_opts="--cfg:server.http_addr=0.0.0.0"'
+        # La sintaxis exacta sin guiones que espera Grafana
+        content: 'grafana_opts="cfg:server.http_addr=0.0.0.0"'
         owner: root
         group: root
         mode: '0644'
