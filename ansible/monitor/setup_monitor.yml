@@ -64,23 +64,23 @@
         - { src: 'victoria-metrics-opts.j2', dest: '/etc/conf.d/victoria-metrics' }
       notify: Restart VictoriaMetrics
 
-   - name: "4. Inyectar Password de Grafana"
-     ansible.builtin.lineinfile:
-       path: /etc/grafana.ini
-       regexp: '^;admin_password ='
-       # Ahora usamos la variable dentro del objeto 'secretos'
-       line: "admin_password = {{ secretos.grafana_admin_password }}"
-       owner: "root"
-       group: "grafana"
-       mode: "0640"
-     no_log: false
+    - name: "4. Inyectar Password de Grafana"
+      ansible.builtin.lineinfile:
+        path: /etc/grafana.ini
+        regexp: '^;admin_password ='
+        # Usamos el objeto 'secretos' cargado desde el YAML cifrado
+        line: "admin_password = {{ secretos.grafana_admin_password }}"
+        owner: "root"
+        group: "grafana"
+        mode: "0640"
+      no_log: false  # Mantenlo en 'true' en prod para no ver la clave en el log
 
-   - name: "4.1 Forzar a Grafana a escuchar en todas las interfaces"
-     ansible.builtin.lineinfile:
-       path: /etc/conf.d/grafana
-       regexp: '127.0.0.1'
-       line: 'grafana_opts="--cfg:server.http_addr=0.0.0.0"'
-     notify: Restart Grafana
+    - name: "4.1 Forzar a Grafana a escuchar en todas las interfaces"
+      ansible.builtin.lineinfile:
+        path: /etc/conf.d/grafana
+        regexp: '127.0.0.1'
+        line: 'grafana_opts="--cfg:server.http_addr=0.0.0.0"'
+      notify: Restart Grafana
 
     - name: "5. Inyectar Data Source (Ruta de Alpine)"
       ansible.builtin.copy:
