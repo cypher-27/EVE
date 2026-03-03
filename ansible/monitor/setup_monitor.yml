@@ -64,21 +64,23 @@
         - { src: 'victoria-metrics-opts.j2', dest: '/etc/conf.d/victoria-metrics' }
       notify: Restart VictoriaMetrics
 
-    - name: "4. Configurar Password de Admin en .ini"
-      ansible.builtin.lineinfile:
-        path: /etc/grafana.ini
-        regexp: '^[;#]?\s*admin_password\s*='
-        line: "admin_password = {{ secretos.grafana_admin_password }}"
-      no_log: true
+   - name: "4. Inyectar Password de Grafana"
+     ansible.builtin.lineinfile:
+       path: /etc/grafana.ini
+       regexp: '^;admin_password ='
+       # Ahora usamos la variable dentro del objeto 'secretos'
+       line: "admin_password = {{ secretos.grafana_admin_password }}"
+       owner: "root"
+       group: "grafana"
+       mode: "0640"
+     no_log: false
 
-    - name: "4.1 FIX: Liberar a Grafana de 127.0.0.1 de forma segura (Alpine Override)"
-      ansible.builtin.lineinfile:
-        path: /etc/conf.d/grafana
-        # Buscamos la línea que define las opciones o contiene la IP local
-        regexp: '^grafana_opts=.*127\.0\.0\.1'
-        # Y la reemplazamos manteniendo la sintaxis original
-        line: 'grafana_opts="--cfg:server.http_addr=0.0.0.0"'
-      notify: Restart Grafana
+   - name: "4.1 Forzar a Grafana a escuchar en todas las interfaces"
+     ansible.builtin.lineinfile:
+       path: /etc/conf.d/grafana
+       regexp: '127.0.0.1'
+       line: 'grafana_opts="--cfg:server.http_addr=0.0.0.0"'
+     notify: Restart Grafana
 
     - name: "5. Inyectar Data Source (Ruta de Alpine)"
       ansible.builtin.copy:
