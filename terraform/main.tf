@@ -116,8 +116,8 @@ resource "proxmox_lxc" "entorno_lxc" {
   dynamic "mountpoint" {
     for_each = lookup(each.value.recursos, "disco_datos", null) != null ? [1] : []
     content {
-      slot    = 1
-      key     = "mp1"
+      slot    = 0
+      key     = "mp0"
       storage = each.value.recursos.disco_datos.storage
       mp      = "/var/lib/victoria-metrics" # Donde VM guarda los datos
       size    = each.value.recursos.disco_datos.size
