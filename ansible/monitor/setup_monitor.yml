@@ -64,16 +64,28 @@
         - { src: 'victoria-metrics-opts.j2', dest: '/etc/conf.d/victoria-metrics' }
       notify: Restart VictoriaMetrics
 
-    - name: "4. Configurar Grafana (.ini y Password)"
+    - name: "4. Configurar Grafana (Enlace 0.0.0.0 en el .ini)"
       ansible.builtin.lineinfile:
         path: /etc/grafana.ini
-        regexp: "{{ item.regexp }}"
-        line: "{{ item.line }}"
-      loop:
-        - { regexp: '^;admin_password =', line: "admin_password = {{ secretos.grafana_admin_password }}" }
-        - { regexp: '127.0.0.1', line: 'grafana_opts="--cfg:server.http_addr=0.0.0.0"' }
-        # NO necesitamos forzar la ruta aquí porque Alpine usa /var/lib/grafana por defecto
+        regexp: '^;http_addr ='
+        line: "http_addr = 0.0.0.0"
+      notify: Restart Grafana
+
+    - name: "4.1 Configurar Password de Admin en .ini"
+      ansible.builtin.lineinfile:
+        path: /etc/grafana.ini
+        regexp: '^;admin_password ='
+        line: "admin_password = {{ secretos.grafana_admin_password }}"
       no_log: true
+
+    - name: "4.2 FIX: Forzar 0.0.0.0 en el archivo de opciones de Alpine (Override)"
+      ansible.builtin.copy:
+        dest: /etc/conf.d/grafana
+        content: 'grafana_opts="--cfg:server.http_addr=0.0.0.0"'
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart Grafana
 
     - name: "5. Inyectar Data Source (Ruta de Alpine)"
       ansible.builtin.copy:
