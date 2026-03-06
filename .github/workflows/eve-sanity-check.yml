@@ -38,12 +38,16 @@ jobs:
 
       - name: 🌐 Verificando Conectividad ZeroTier
         run: |
-          # Buscamos cualquier interfaz que empiece por 'zt'
-          ZT_IFACE=$(ip -br addr show | awk '{print $1}' | grep '^zt' | head -n 1)
-          if [ -z "$ZT_IFACE" ]; then
+          # Buscamos todas las interfaces que empiecen por 'zt'
+          ZT_IFACES=$(ip -br addr show | awk '{print $1}' | grep '^zt')
+          if [ -z "$ZT_IFACES" ]; then
             echo "⚠ Warning: No se detectó ninguna interfaz de ZeroTier activa."
           else
-            echo "✅ ZeroTier detectado en interfaz: $ZT_IFACE"
-            ip addr show "$ZT_IFACE" | grep "inet "
+            echo "✅ Interfaces ZeroTier detectadas:"
+            echo "$ZT_IFACES" | while read -r iface; do
+              echo ""
+              echo "  🔹 Interfaz: $iface"
+              ip addr show "$iface" | grep "inet " | sed 's/^/    /'
+            done
           fi
 
