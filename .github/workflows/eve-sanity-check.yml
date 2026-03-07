@@ -1,9 +1,7 @@
 name: EVE - Sanity Check
 
 on:
-  push:
-    branches: [ main, dev ]
-  workflow_dispatch:
+  workflow_dispatch:  # Solo ejecución manual
 
 # Definimos variables globales para que SOPS funcione
 env:

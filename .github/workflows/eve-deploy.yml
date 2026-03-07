@@ -1,0 +1,24 @@
+name: EVE - Automated Deployment
+
+on:
+  push:
+    branches: [ dev, main ]  # Se dispara en ambas, el orquestador decide el storage
+  workflow_dispatch:         # También permite ejecución manual
+
+jobs:
+  deploy:
+    name: Infrastructure Sync
+    runs-on: eve  # Runner consistente con sanity-check
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Execute EVE Orchestrator
+        run: |
+          chmod +x orchestrator.sh
+          ./orchestrator.sh
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
