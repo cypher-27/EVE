@@ -54,6 +54,9 @@ entornos:
         storage: "hdd_data"
         size: "50G"
     firewall_externo:
+      - puerto: 22
+        protocolo: "tcp"
+        descripcion: "SSH Admin"
       - puerto: 3000
         protocolo: "tcp"
         descripcion: "Grafana Web"

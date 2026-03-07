@@ -89,7 +89,7 @@ send_telegram() {
 handle_error() {
     local step="$1"
     local error_log="$2"
-    IN_PROGRESS=false # Evitamos doble notificación del trap
+    # NO seteamos IN_PROGRESS=false aquí para permitir que el trap ejecute el rollback
     cd "$SCRIPT_DIR"  # Siempre volver al directorio base antes de salir
     echo -e "${RED}[ERROR] Fallo en: ${step}${NC}"
     send_telegram "❌ *ERROR CRÍTICO* en etapa: \`${step}\`\n\n⚠ *Detalle:*\n${error_log}"
@@ -105,42 +105,52 @@ wait_for_ssh() {
         return
     fi
 
-    local max_retries=60   # 60 reintentos x 2s = 120 segundos (2 minutos)
+    echo -e "${GREEN}Esperando SSH en $ip...${NC}"
+
+    # Dar tiempo a que la VM/LXC termine de arrancar
+    echo -e "${CYAN}[*] Esperando 10s iniciales para boot...${NC}"
+    sleep 10
+
+    local max_retries=90   # 90 reintentos x 2s = 180 segundos (3 minutos total)
     local count=0
-    echo -n -e "${GREEN}Esperando SSH en $ip...${NC}"
-    until nc -z -v -w5 "$ip" 22 &>/dev/null; do
+
+    until nc -z -w5 "$ip" 22 2>/dev/null; do
         echo -n "."
         sleep 2
         ((count++))
         if [ $count -ge $max_retries ]; then
-            echo -e "\n${RED}[!] Timeout: La IP $ip no respondió en 2 minutos.${NC}"
+            echo -e "\n${RED}[!] Timeout: La IP $ip no respondió en 3 minutos.${NC}"
+            echo -e "${YELLOW}[!] Verificando si la IP es alcanzable...${NC}"
+            ping -c 1 "$ip" 2>/dev/null && echo -e "${YELLOW}[!] La IP responde a ping pero no a SSH${NC}" || echo -e "${RED}[!] La IP no responde ni a ping${NC}"
             handle_error "Espera de SSH" "La VM $ip no levantó el puerto 22."
         fi
     done
+
     # Purgar known_hosts para evitar conflictos de fingerprint
     ssh-keygen -f "$HOME/.ssh/known_hosts" -R "$ip" > /dev/null 2>&1
-    echo -e "${GREEN} ¡Listo y purgado!${NC}"
+    echo -e "${GREEN}✓ SSH disponible en $ip${NC}"
 }
 
 cleanup() {
     local exit_code=$?
     if [ "$IN_PROGRESS" = true ] && [ "$ACTION" != "plan" ]; then
-        echo -e "\n${RED}[!] INTERRUPCIÓN DETECTADA (Código: $exit_code)${NC}"
-        echo -e "${YELLOW}[!] Etapa interrumpida: $CURRENT_STEP${NC}"
+        echo -e "\n${RED}[!] ERROR DETECTADO (Código: $exit_code)${NC}"
+        echo -e "${YELLOW}[!] Etapa fallida: $CURRENT_STEP${NC}"
 
         # --- ROLLBACK AUTOMÁTICO ---
-        # Si Terraform ya aplicó cambios pero falló algo después, destruimos para dejar limpio
         if [ "$TERRAFORM_APPLIED" = true ]; then
             echo -e "${YELLOW}[!] Terraform ya había aplicado cambios. Ejecutando rollback automático...${NC}"
+            send_telegram "🔄 *ROLLBACK*: Destruyendo infraestructura por error en \`${CURRENT_STEP}\`..."
             cd "$SCRIPT_DIR/terraform" 2>/dev/null
             terraform destroy -auto-approve 2>&1
             cd "$SCRIPT_DIR"
             echo -e "${YELLOW}[!] Rollback completado. Infraestructura destruida.${NC}"
         fi
 
-        local msg="⚠ *EJECUCIÓN INTERRUMPIDA*\n\n📍 *Etapa:* \`$CURRENT_STEP\`\n🚫 *Estado:* El proceso fue cancelado o falló.\n🔄 *Rollback:* $([ "$TERRAFORM_APPLIED" = true ] && echo 'Ejecutado' || echo 'No necesario')"
+        local msg="⚠ *EJECUCIÓN FALLIDA*\n\n📍 *Etapa:* \`$CURRENT_STEP\`\n🚫 *Exit code:* $exit_code\n🔄 *Rollback:* $([ "$TERRAFORM_APPLIED" = true ] && echo '✅ Ejecutado' || echo '➖ No necesario')"
         send_telegram "$msg"
     fi
+    IN_PROGRESS=false
     exit $exit_code
 }
 
