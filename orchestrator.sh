@@ -74,6 +74,7 @@ done
 # Variables de seguimiento
 CURRENT_STEP="Inicialización"
 IN_PROGRESS=true
+TERRAFORM_APPLIED=false  # Para rollback automático en caso de error
 
 # --- FUNCIONES DE SOPORTE ---
 send_telegram() {
@@ -104,7 +105,7 @@ wait_for_ssh() {
         return
     fi
 
-    local max_retries=30
+    local max_retries=60   # 60 reintentos x 2s = 120 segundos (2 minutos)
     local count=0
     echo -n -e "${GREEN}Esperando SSH en $ip...${NC}"
     until nc -z -v -w5 "$ip" 22 &>/dev/null; do
@@ -112,10 +113,11 @@ wait_for_ssh() {
         sleep 2
         ((count++))
         if [ $count -ge $max_retries ]; then
-            echo -e "\n${RED}[!] Timeout: La IP $ip no respondió.${NC}"
+            echo -e "\n${RED}[!] Timeout: La IP $ip no respondió en 2 minutos.${NC}"
             handle_error "Espera de SSH" "La VM $ip no levantó el puerto 22."
         fi
     done
+    # Purgar known_hosts para evitar conflictos de fingerprint
     ssh-keygen -f "$HOME/.ssh/known_hosts" -R "$ip" > /dev/null 2>&1
     echo -e "${GREEN} ¡Listo y purgado!${NC}"
 }
@@ -125,8 +127,18 @@ cleanup() {
     if [ "$IN_PROGRESS" = true ] && [ "$ACTION" != "plan" ]; then
         echo -e "\n${RED}[!] INTERRUPCIÓN DETECTADA (Código: $exit_code)${NC}"
         echo -e "${YELLOW}[!] Etapa interrumpida: $CURRENT_STEP${NC}"
-        
-        local msg="⚠ *EJECUCIÓN INTERRUMPIDA*\n\n📍 *Etapa:* \`$CURRENT_STEP\`\n🚫 *Estado:* El proceso fue cancelado o falló inesperadamente.\n🔐 *Aviso:* Revisa el State Lock de Terraform."
+
+        # --- ROLLBACK AUTOMÁTICO ---
+        # Si Terraform ya aplicó cambios pero falló algo después, destruimos para dejar limpio
+        if [ "$TERRAFORM_APPLIED" = true ]; then
+            echo -e "${YELLOW}[!] Terraform ya había aplicado cambios. Ejecutando rollback automático...${NC}"
+            cd "$SCRIPT_DIR/terraform" 2>/dev/null
+            terraform destroy -auto-approve 2>&1
+            cd "$SCRIPT_DIR"
+            echo -e "${YELLOW}[!] Rollback completado. Infraestructura destruida.${NC}"
+        fi
+
+        local msg="⚠ *EJECUCIÓN INTERRUMPIDA*\n\n📍 *Etapa:* \`$CURRENT_STEP\`\n🚫 *Estado:* El proceso fue cancelado o falló.\n🔄 *Rollback:* $([ "$TERRAFORM_APPLIED" = true ] && echo 'Ejecutado' || echo 'No necesario')"
         send_telegram "$msg"
     fi
     exit $exit_code
@@ -219,6 +231,7 @@ TF_OUTPUT=$(terraform apply -auto-approve 2>&1)
 if [ $? -ne 0 ]; then
     handle_error "Terraform Apply" "$TF_OUTPUT"
 fi
+TERRAFORM_APPLIED=true  # Marcar para posible rollback
 cd "$SCRIPT_DIR"
 
 # 4. ESPERA SSH
