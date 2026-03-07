@@ -1,14 +1,21 @@
+# ==========================================
+# EVE - SINGLE SOURCE OF TRUTH (v2.0)
+# ==========================================
+
 entornos:
-  # === INFRAESTRUCTURA CORE (Físicos) ===
+  # === INFRAESTRUCTURA CORE (Intocables) ===
+  # El orquestador NUNCA debe intentar destruirlos.
   - nombre: "doom-gateway"
     estado: "presente"
     tipo: "gateway"
+    core: true
     red:
       ip: "192.168.1.30/24"
 
   - nombre: "makima-core"
     estado: "presente"
     tipo: "fisico"
+    core: true
     red:
       ip: "192.168.1.20/24"
     firewall_externo:
@@ -19,6 +26,7 @@ entornos:
   - nombre: "reze-core"
     estado: "presente"
     tipo: "fisico"
+    core: true
     red:
       ip: "192.168.1.10/24"
     firewall_externo:
@@ -26,46 +34,12 @@ entornos:
         protocolo: "tcp"
         descripcion: "GUI Reze"
 
-  # === VMs y LXCs ===
-  - nombre: "eve-test-01"
-    estado: "presente"
-    tipo: "vm"
-    nodo_proxmox: "makima"
-    vmid: 100
-    plantilla: "debian13-template"
-    red:
-      ip: "192.168.1.50/24"
-      gateway: "192.168.1.30"
-    recursos:
-      cores: 2
-      memoria: 2048
-      disco: 20
-    firewall_externo:
-      - puerto: 22
-        protocolo: "tcp"
-        descripcion: "SSH Admin"
-
-  - nombre: "lxc-ligero-01"
-    estado: "presente"
-    tipo: "lxc"
-    os: "alpine"
-    nodo_proxmox: "reze"
-    vmid: 200
-    red:
-      ip: "192.168.1.51/24"
-      gateway: "192.168.1.30"
-    recursos:
-      cores: 1
-      memoria: 512
-      disco: 8
-    firewall_externo:
-      - puerto: 22
-        protocolo: "tcp"
-        descripcion: "SSH LXC"
-
+  # === SERVICIOS BASE (Opcionales pero Permanentes) ===
+  # Si no quieres Grafana, solo cambia 'estado' a 'ausente'.
   - nombre: "eve-monitor"
     estado: "presente"
     tipo: "lxc"
+    core: true
     os: "alpine"
     nodo_proxmox: "makima"
     vmid: 300
@@ -86,6 +60,46 @@ entornos:
       - puerto: 8428
         protocolo: "tcp"
         descripcion: "VictoriaMetrics Ingest"
+
+  # === LABORATORIOS DINÁMICOS (Lo que tú o la IA crean) ===
+  - nombre: "eve-test-01"
+    estado: "presente"
+    tipo: "vm"
+    core: false
+    efimero: true
+    monitor_enabled: true
+    nodo_proxmox: "makima"
+    vmid: 100
+    plantilla: "debian13-template"
+    red:
+      ip: "192.168.1.41/24"
+      gateway: "192.168.1.30"
+    recursos:
+      cores: 2
+      memoria: 2048
+      disco: 20
+    firewall_externo:
+      - puerto: 22
+        protocolo: "tcp"
+        descripcion: "SSH Admin"
+
+  - nombre: "lxc-ligero-01"
+    estado: "presente"
+    tipo: "lxc"
+    core: false
+    efimero: false
+    monitor_enabled: false
+    os: "alpine"
+    nodo_proxmox: "reze"
+    vmid: 200
+    red:
+      ip: "192.168.1.42/24"
+      gateway: "192.168.1.30"
+    recursos:
+      cores: 1
+      memoria: 512
+      disco: 8
+    firewall_externo:
       - puerto: 22
         protocolo: "tcp"
         descripcion: "SSH LXC"
