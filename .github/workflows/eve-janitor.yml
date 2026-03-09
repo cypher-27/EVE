@@ -9,8 +9,6 @@ on:
         description: 'Escribe "DESTROY" para confirmar la limpieza'
         required: true
         default: 'NO'
-  push:
-    branches: [ dev ]  # TEMPORAL: Solo para que aparezca en Actions
 
 jobs:
   cleanup:
@@ -36,14 +34,6 @@ jobs:
 
       - name: Verificación de Seguridad
         run: |
-          # Para push: NO ejecutar destrucción, solo registrar workflow
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            echo "ℹ️ Push detectado - El Janitor NO destruye en push."
-            echo "ℹ️ Este run es solo para registrar el workflow en Actions."
-            echo "ℹ️ Para destruir, usa 'Run workflow' manualmente con 'DESTROY'."
-            exit 0
-          fi
-
           # Para scheduled runs: SOLO permitido en dev
           if [[ "${{ github.event_name }}" == "schedule" ]]; then
             if [[ "${{ github.ref }}" == *"main"* ]]; then

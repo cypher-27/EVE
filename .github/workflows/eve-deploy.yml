@@ -1,7 +1,9 @@
 name: EVE - Automated Deployment
 
 on:
-  workflow_dispatch:  # Solo manual temporalmente
+  push:
+    branches: [ dev, main ]
+  workflow_dispatch:
 
 jobs:
   deploy:
