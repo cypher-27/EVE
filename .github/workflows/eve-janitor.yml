@@ -1,4 +1,4 @@
-name: 🧹 EVE - Janitor (Cleanup)
+name: EVE - Janitor
 
 on:
   schedule:
