@@ -9,13 +9,15 @@ on:
         description: 'Escribe "DESTROY" para confirmar la limpieza'
         required: true
         default: 'NO'
+  push:
+    branches: [ dev ]  # TEMPORAL: Solo para que aparezca en Actions
 
 jobs:
   cleanup:
     name: Limpieza de Infraestructura
     runs-on: eve
-    # Scheduled runs solo en rama dev (default branch debe ser dev)
-    if: github.event_name != 'schedule' || github.ref == 'refs/heads/dev'
+    # Solo ejecutar en dev, NUNCA en main
+    if: github.ref == 'refs/heads/dev'
 
     steps:
       - name: Detectar entorno
