@@ -1,4 +1,4 @@
-name: EVE - Janitor (Limpieza y Mantenimiento)
+name: EVE - Janitor
 
 on:
   schedule:
