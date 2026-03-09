@@ -119,7 +119,10 @@ handle_error() {
     local error_log="$2"
     cd "$SCRIPT_DIR"
     echo -e "${RED}[ERROR] Fallo en: ${step}${NC}"
-    send_telegram "❌ *ERROR CRÍTICO* en etapa: \`${step}\`\n\n⚠ *Detalle:*\n${error_log}"
+    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}${error_log}${NC}"
+    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    send_telegram "❌ *ERROR CRÍTICO* en etapa: \`${step}\`\n\n⚠ *Detalle:*\n\`\`\`${error_log}\`\`\`"
     exit 1
 }
 
@@ -168,7 +171,9 @@ terraform_init() {
 # --- CLEANUP CON ROLLBACK GRANULAR ---
 cleanup() {
     local exit_code=$?
-    if [ "$IN_PROGRESS" = true ] && [ "$ACTION" != "plan" ] && [ "$STAGE" != "validate" ]; then
+
+    # Solo ejecutar rollback si hay error real (exit_code != 0)
+    if [ "$IN_PROGRESS" = true ] && [ "$exit_code" -ne 0 ] && [ "$ACTION" != "plan" ] && [ "$STAGE" != "validate" ]; then
         echo -e "\n${RED}[!] ERROR DETECTADO (Código: $exit_code)${NC}"
         echo -e "${YELLOW}[!] Etapa fallida: $CURRENT_STEP${NC}"
 
@@ -196,6 +201,12 @@ cleanup() {
         local msg="⚠ *EJECUCIÓN FALLIDA*\n\n📍 *Etapa:* \`$CURRENT_STEP\`\n🚫 *Exit code:* $exit_code\n🔄 *Rollback:* $rollback_status"
         send_telegram "$msg"
     fi
+
+    # Siempre limpiar estado al salir exitosamente
+    if [ "$exit_code" -eq 0 ]; then
+        clear_state
+    fi
+
     IN_PROGRESS=false
     exit $exit_code
 }
