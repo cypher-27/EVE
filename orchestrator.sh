@@ -108,9 +108,12 @@ clear_state() {
 send_telegram() {
     local message="$1"
     if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+        # Usar printf para interpretar \n correctamente
+        local formatted_msg
+        formatted_msg=$(printf '%b' "*EVE Report*: ${message}")
         curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
-            -d text="*EVE Report*: ${message}" -d parse_mode="Markdown" > /dev/null
+            -d text="${formatted_msg}" -d parse_mode="Markdown" > /dev/null
     fi
 }
 
