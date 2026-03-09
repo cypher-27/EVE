@@ -63,10 +63,10 @@ jobs:
           else
             MODO_TEXTO="Manual"
           fi
+          MSG="🧹 *JANITOR*: Iniciando limpieza de *${ENTORNO}*\n📋 *Modo:* ${MODO_TEXTO}"
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
-            -d text="🧹 *JANITOR*: Iniciando limpieza de *${ENTORNO}*
-        📋 *Modo:* ${MODO_TEXTO}" \
+            --data-urlencode "text=${MSG}" \
             -d parse_mode="Markdown" > /dev/null
 
       - name: Ejecutar Terraform Destroy
@@ -88,7 +88,8 @@ jobs:
             EMOJI="❌"
             ESTADO="Fallida"
           fi
+          MSG="${EMOJI} *JANITOR*: Limpieza de *${ENTORNO}* ${ESTADO}"
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
-            -d text="${EMOJI} *JANITOR*: Limpieza de *${ENTORNO}* ${ESTADO}" \
+            --data-urlencode "text=${MSG}" \
             -d parse_mode="Markdown" > /dev/null
