@@ -1,94 +1,83 @@
-name: EVE - Janitor
+name: 🧹 EVE - Janitor (Cleanup)
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # Limpieza automática diaria (solo afecta dev)
+    - cron: '0 0 * * *'  # Medianoche UTC - Siempre afecta DEV
   workflow_dispatch:
     inputs:
-      confirmacion:
-        description: 'Escribe "DESTROY" para confirmar la limpieza'
+      entorno:
+        description: 'Entorno a destruir'
         required: true
-        default: 'NO'
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - main
+      confirmacion:
+        description: 'Escribe "DESTROY" para confirmar'
+        required: true
+        default: ''
 
 jobs:
   cleanup:
     name: Limpieza de Infraestructura
     runs-on: eve
-    # Solo ejecutar en dev, NUNCA en main
-    if: github.ref == 'refs/heads/dev'
 
     steps:
-      - name: Detectar entorno
-        id: entorno
-        run: |
-          if [[ "${{ github.ref }}" == *"main"* ]]; then
-            echo "env=main" >> $GITHUB_OUTPUT
-            echo "⚠️ MODO: MAIN (Producción - SSD ZFS)"
-          else
-            echo "env=dev" >> $GITHUB_OUTPUT
-            echo "🔧 MODO: DEV (Efímero - HDD)"
-          fi
-
-      - name: Checkout Repository
+      - name: 📂 Checkout
         uses: actions/checkout@v4
 
-      - name: Verificación de Seguridad
+      - name: 🎯 Determinar entorno objetivo
+        id: target
         run: |
-          # Para scheduled runs: SOLO permitido en dev
+          # Si es scheduled (cron), SIEMPRE es dev
           if [[ "${{ github.event_name }}" == "schedule" ]]; then
-            if [[ "${{ github.ref }}" == *"main"* ]]; then
-              echo "❌ ERROR: Cron no permitido en main. El Janitor automático solo opera en dev."
-              exit 1
-            fi
-            echo "✅ Cron autorizado para dev"
+            echo "target_env=dev" >> $GITHUB_OUTPUT
+            echo "🔧 Modo: AUTOMÁTICO (Cron) → Entorno: DEV"
           fi
 
-          # Para workflow_dispatch: requiere confirmación escrita
+          # Si es manual, usar el input del usuario
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             if [[ "${{ github.event.inputs.confirmacion }}" != "DESTROY" ]]; then
-              echo "❌ ERROR: Palabra de seguridad incorrecta."
-              echo "💡 Debes escribir 'DESTROY' (sin comillas) para confirmar."
+              echo "❌ Confirmación incorrecta. Debes escribir 'DESTROY'."
               exit 1
             fi
-            echo "✅ Confirmación recibida: DESTROY"
+            echo "target_env=${{ github.event.inputs.entorno }}" >> $GITHUB_OUTPUT
+            echo "🎛️ Modo: MANUAL → Entorno: ${{ github.event.inputs.entorno }}"
           fi
 
-      - name: Notificar inicio de limpieza
+      - name: 🔔 Notificar inicio
         run: |
           source <(sops -d secrets.enc.env)
-          ENTORNO="${{ steps.entorno.outputs.env }}"
+          TARGET="${{ steps.target.outputs.target_env }}"
           MODO="${{ github.event_name }}"
-          if [ "$MODO" == "schedule" ]; then
-            MODO_TEXTO="Automático (Cron)"
-          else
-            MODO_TEXTO="Manual"
-          fi
-          MSG="🧹 *JANITOR*: Iniciando limpieza de *${ENTORNO}*\n📋 *Modo:* ${MODO_TEXTO}"
+          [ "$MODO" == "schedule" ] && MODO_TEXTO="Automático" || MODO_TEXTO="Manual"
+          MSG="🧹 *JANITOR*: Iniciando limpieza de *${TARGET}*\n📋 *Modo:* ${MODO_TEXTO}"
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=${MSG}" \
             -d parse_mode="Markdown" > /dev/null
 
-      - name: Ejecutar Terraform Destroy
+      - name: 🚮 Ejecutar Terraform Destroy
         run: |
           chmod +x orchestrator.sh
           ./orchestrator.sh --destroy --force
         env:
-          TF_VAR_eve_env: ${{ steps.entorno.outputs.env }}
+          TF_VAR_eve_env: ${{ steps.target.outputs.target_env }}
 
-      - name: Notificar limpieza completada
+      - name: 📢 Notificar resultado
         if: always()
         run: |
           source <(sops -d secrets.enc.env)
-          ENTORNO="${{ steps.entorno.outputs.env }}"
-          if [ "${{ job.status }}" == "success" ]; then
+          TARGET="${{ steps.target.outputs.target_env }}"
+          if [[ "${{ job.status }}" == "success" ]]; then
             EMOJI="✅"
             ESTADO="Completada"
           else
             EMOJI="❌"
             ESTADO="Fallida"
           fi
-          MSG="${EMOJI} *JANITOR*: Limpieza de *${ENTORNO}* ${ESTADO}"
+          MSG="${EMOJI} *JANITOR*: Limpieza de *${TARGET}* ${ESTADO}"
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=${MSG}" \
