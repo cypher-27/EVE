@@ -394,6 +394,12 @@ if [ "$ACTION" == "destroy" ]; then
         exit 1
     fi
 
+    # Cargar secretos para Terraform y Telegram
+    if [ -z "$AWS_ACCESS_KEY_ID" ]; then
+        echo -e "${CYAN}[*] Cargando secretos...${NC}"
+        source <(sops -d secrets.enc.env) || handle_error "Carga de Secretos" "No se pudo desencriptar secrets.enc.env"
+    fi
+
     send_telegram "🧹 *AVISO*: Iniciando destrucción de infraestructura..."
 
     echo -e "${GREEN}[1/3] Inicializando Terraform...${NC}"
