@@ -3,6 +3,18 @@
 # 1. Leer el Contrato Maestro (Single Source of Truth)
 locals {
   lab_state = yamldecode(file("../lab-state.yaml"))
+
+  # Mapa de decisión: [Nodo][Entorno] = StoragePool
+  storage_map = {
+    "makima" = {
+      "main" = "local-zfs" # SSD 100GB
+      "dev"  = "hdd_data"  # HDD 850GB
+    }
+    "reze" = {
+      "main" = "local-zfs" # HDD 850GB
+      "dev"  = "local-zfs" # HDD 850GB (Porque no hay hdd_data)
+    }
+  }
   
   # Filtramos VMs activas
   active_vms = {
@@ -45,7 +57,7 @@ resource "proxmox_vm_qemu" "entorno_vm" {
 
   memory = each.value.recursos.memoria
   scsihw = "virtio-scsi-single"
-  
+
   disks {
     ide {
       ide2 {
@@ -57,9 +69,8 @@ resource "proxmox_vm_qemu" "entorno_vm" {
     scsi {
       scsi0 {
         disk {
-          # Leemos el disco desde el YAML
-          size     = each.value.recursos.disco 
-          storage  = "local-zfs"
+          size     = "${each.value.recursos.disco}G"
+          storage  = local.storage_map[each.value.nodo_proxmox][var.eve_env]
           iothread = true
         }
       }
@@ -75,7 +86,7 @@ resource "proxmox_vm_qemu" "entorno_vm" {
   os_type   = "cloud-init"
   ipconfig0 = "ip=${each.value.red.ip},gw=${each.value.red.gateway}"
   ciuser    = "admin"
-  
+
   sshkeys   = <<EOF
   ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM9kG6lsmZBCtkdYOAIZwNJ5foJRHrRItjpNlQYrX4zT admin@eve
   EOF
@@ -107,8 +118,9 @@ resource "proxmox_lxc" "entorno_lxc" {
   
   # Disco Principal (Root)
   rootfs {
-    storage = "local-zfs"
-    size    = "${each.value.recursos.disco}G" 
+    # Aquí buscamos en el mapa usando el nodo y la variable que manda el orquestador
+    storage = local.storage_map[each.value.nodo_proxmox][var.eve_env]
+    size    = "${each.value.recursos.disco}G"
   }
 
   # Disco de Datos (Opcional - Solo si existe en el YAML)

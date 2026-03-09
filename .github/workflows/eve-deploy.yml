@@ -1,0 +1,29 @@
+name: EVE - Automated Deployment
+
+on:
+  push:
+    branches: [ dev, main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Infrastructure Deployment
+    runs-on: eve
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Stage 1 - Validate
+        run: |
+          chmod +x orchestrator.sh
+          ./orchestrator.sh --stage-validate
+
+      - name: Stage 2 - Firewall SDN
+        run: ./orchestrator.sh --stage-firewall
+
+      - name: Stage 3 - Infrastructure
+        run: ./orchestrator.sh --stage-infra
+
+      - name: Stage 4 - Configuration
+        run: ./orchestrator.sh --stage-config

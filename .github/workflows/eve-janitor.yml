@@ -1,0 +1,84 @@
+name: 🧹 EVE - Janitor (Cleanup)
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Medianoche UTC - Siempre afecta DEV
+  workflow_dispatch:
+    inputs:
+      entorno:
+        description: 'Entorno a destruir'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - main
+      confirmacion:
+        description: 'Escribe "DESTROY" para confirmar'
+        required: true
+        default: ''
+
+jobs:
+  cleanup:
+    name: Limpieza de Infraestructura
+    runs-on: eve
+
+    steps:
+      - name: 📂 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🎯 Determinar entorno objetivo
+        id: target
+        run: |
+          # Si es scheduled (cron), SIEMPRE es dev
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            echo "target_env=dev" >> $GITHUB_OUTPUT
+            echo "🔧 Modo: AUTOMÁTICO (Cron) → Entorno: DEV"
+          fi
+
+          # Si es manual, usar el input del usuario
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${{ github.event.inputs.confirmacion }}" != "DESTROY" ]]; then
+              echo "❌ Confirmación incorrecta. Debes escribir 'DESTROY'."
+              exit 1
+            fi
+            echo "target_env=${{ github.event.inputs.entorno }}" >> $GITHUB_OUTPUT
+            echo "🎛️ Modo: MANUAL → Entorno: ${{ github.event.inputs.entorno }}"
+          fi
+
+      - name: 🔔 Notificar inicio
+        run: |
+          source <(sops -d secrets.enc.env)
+          TARGET="${{ steps.target.outputs.target_env }}"
+          MODO="${{ github.event_name }}"
+          [ "$MODO" == "schedule" ] && MODO_TEXTO="Automático" || MODO_TEXTO="Manual"
+          MSG="🧹 *JANITOR*: Iniciando limpieza de *${TARGET}*\n📋 *Modo:* ${MODO_TEXTO}"
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${MSG}" \
+            -d parse_mode="Markdown" > /dev/null
+
+      - name: 🚮 Ejecutar Terraform Destroy
+        run: |
+          chmod +x orchestrator.sh
+          ./orchestrator.sh --destroy --force
+        env:
+          TF_VAR_eve_env: ${{ steps.target.outputs.target_env }}
+
+      - name: 📢 Notificar resultado
+        if: always()
+        run: |
+          source <(sops -d secrets.enc.env)
+          TARGET="${{ steps.target.outputs.target_env }}"
+          if [[ "${{ job.status }}" == "success" ]]; then
+            EMOJI="✅"
+            ESTADO="Completada"
+          else
+            EMOJI="❌"
+            ESTADO="Fallida"
+          fi
+          MSG="${EMOJI} *JANITOR*: Limpieza de *${TARGET}* ${ESTADO}"
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${MSG}" \
+            -d parse_mode="Markdown" > /dev/null

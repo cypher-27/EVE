@@ -21,12 +21,10 @@
         name: "{{ item.nombre }}"
         groups:
           - "eve_dynamic_nodes"
-          - "type_{{ item.tipo | default('vm') }}" # Mantiene tu magia de grupos
+          - "type_{{ item.tipo | default('vm') }}"
         ansible_host: "{{ item.red.ip.split('/')[0] }}"
-        # --- EL FIX MULTIMODAL ---
         # Si es VM usa 'admin', si es LXC usa 'root'
         ansible_user: "{{ 'admin' if (item.tipo | default('vm')) == 'vm' else 'root' }}"
-        # --- TU LLAVE REAL ---
         ansible_ssh_private_key_file: "~/.ssh/eve_admin"
         ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o CheckHostIP=no"
       loop: "{{ contrato.entornos }}"
@@ -38,45 +36,50 @@
 # PLAY 2: Configuración Base (Distribuida por tipos)
 # ==============================================================================
 - name: "Fase 2: Ejecución de Configuración Base"
-  # Target: Todos los nodos dinámicos EXCEPTO los físicos (Makima/Reze) para no romper Proxmox
   hosts: type_vm:type_lxc
   become: yes
-  # IMPORTANTE: Desactivamos el recolectado automático de inicio porque Alpine no tiene Python aún
-  gather_facts: false 
+  gather_facts: false
+
+  vars:
+    lab_state: "{{ lookup('file', '../../lab-state.yaml') | from_yaml }}"
 
   pre_tasks:
     - name: "Bootstrap: Instalar Python en Alpine (vía RAW)"
-      # El módulo 'raw' envía comandos SSH directos sin usar Python
       ansible.builtin.raw: apk add --no-cache python3
       changed_when: false
-      when: 
-        - "inventory_hostname in groups['type_lxc']"
-        # Aquí una lógica simple: si no podemos correr python3 --version, lo instalamos
+      when:
+        - "'type_lxc' in group_names"
       ignore_errors: yes
 
     - name: "Recolectar Facts ahora que Python existe"
       ansible.builtin.setup:
 
   tasks:
-    - name: "2.0 Test de Conexión (Sin Sudo)"
+    - name: "2.0 Determinar si el monitoreo está habilitado para este host"
+      set_fact:
+        is_monitored: "{{ item.monitor_enabled | default(false) }}"
+      loop: "{{ lab_state.entornos }}"
+      when: item.red.ip.split('/')[0] == ansible_host
+
+    - name: "2.1 Test de Conexión (Sin Sudo)"
       ansible.builtin.ping:
       become: no
 
     # --- LÓGICA MULTI-OS ---
-    - name: "2.1 Actualizar repositorios y sistema (Debian)"
+    - name: "2.2 Actualizar repositorios y sistema (Debian)"
       ansible.builtin.apt:
         update_cache: yes
         upgrade: dist
       when: ansible_os_family == "Debian"
 
-    - name: "2.1 Actualizar repositorios y sistema (Alpine)"
+    - name: "2.2 Actualizar repositorios y sistema (Alpine)"
       community.general.apk:
         update_cache: yes
         upgrade: yes
       when: ansible_os_family == "Alpine"
 
-    - name: "2.2 Instalar dependencias globales"
-      ansible.builtin.package: 
+    - name: "2.3 Instalar dependencias globales"
+      ansible.builtin.package:
         name:
           - curl
           - git
@@ -85,7 +88,7 @@
         state: present
 
     # --- EXCLUSIVO PARA VMs ---
-    - name: "2.3 Instalar y habilitar QEMU Guest Agent (SOLO VMs)"
+    - name: "2.4 Instalar y habilitar QEMU Guest Agent (SOLO VMs)"
       block:
         - name: "Instalar QEMU Agent"
           ansible.builtin.apt:
@@ -96,21 +99,22 @@
             name: qemu-guest-agent
             state: started
             enabled: yes
-      when: 
+      when:
         - "'type_vm' in group_names"
         - "ansible_os_family == 'Debian'"
 
-    # --- MONITOREO (EL INFORMANTE) ---
-    - name: "2.4 Instalar Node Exporter (Informante de métricas)"
+    # --- MONITOREO (respeta monitor_enabled del lab-state.yaml) ---
+    - name: "2.5 Instalar Node Exporter"
       ansible.builtin.package:
         name: "prometheus-node-exporter"
         state: present
+      when: is_monitored | default(false) | bool
 
-    - name: "2.5 Asegurar que Node Exporter esté corriendo"
+    - name: "2.6 Asegurar que Node Exporter esté corriendo"
       ansible.builtin.service:
-        # Aquí está el truco: 
         # Debian -> prometheus-node-exporter
         # Alpine -> node-exporter
         name: "{{ 'node-exporter' if ansible_os_family == 'Alpine' else 'prometheus-node-exporter' }}"
         state: started
         enabled: yes
+      when: is_monitored | default(false) | bool
