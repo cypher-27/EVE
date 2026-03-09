@@ -10,13 +10,12 @@ on:
         required: true
         default: 'NO'
 
-env:
-  TF_VAR_eve_env: dev  # Por defecto dev, se sobrescribe según rama
-
 jobs:
   cleanup:
     name: Limpieza de Infraestructura
     runs-on: eve
+    # Scheduled runs solo en rama dev (default branch debe ser dev)
+    if: github.event_name != 'schedule' || github.ref == 'refs/heads/dev'
 
     steps:
       - name: Detectar entorno
@@ -55,10 +54,8 @@ jobs:
           fi
 
       - name: Notificar inicio de limpieza
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
+          source <(sops -d secrets.enc.env)
           ENTORNO="${{ steps.entorno.outputs.env }}"
           MODO="${{ github.event_name }}"
           if [ "$MODO" == "schedule" ]; then
@@ -78,15 +75,11 @@ jobs:
           ./orchestrator.sh --destroy --force
         env:
           TF_VAR_eve_env: ${{ steps.entorno.outputs.env }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - name: Notificar limpieza completada
         if: always()
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
+          source <(sops -d secrets.enc.env)
           ENTORNO="${{ steps.entorno.outputs.env }}"
           if [ "${{ job.status }}" == "success" ]; then
             EMOJI="✅"

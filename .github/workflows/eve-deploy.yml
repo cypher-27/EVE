@@ -18,24 +18,12 @@ jobs:
         run: |
           chmod +x orchestrator.sh
           ./orchestrator.sh --stage-validate
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - name: Stage 2 - Firewall SDN
         run: ./orchestrator.sh --stage-firewall
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
-      - name: Stage 3 - Infrastructure (Terraform + SSH)
+      - name: Stage 3 - Infrastructure
         run: ./orchestrator.sh --stage-infra
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
-      - name: Stage 4 - Configuration (Ansible)
+      - name: Stage 4 - Configuration
         run: ./orchestrator.sh --stage-config
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

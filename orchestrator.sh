@@ -161,7 +161,11 @@ wait_for_ssh() {
 terraform_init() {
     echo -e "${CYAN}[*] Inicializando Terraform...${NC}"
     cd "$SCRIPT_DIR/terraform" || handle_error "Navegación" "No se puede acceder al directorio terraform/"
-    TF_INIT_OUTPUT=$(terraform init -input=false -backend-config="dynamodb_table=devilhunters-terraform-lock" 2>&1)
+
+    # State separado por entorno: dev o main
+    TF_INIT_OUTPUT=$(terraform init -input=false \
+        -backend-config="key=lab/${TF_VAR_eve_env}/terraform.tfstate" 2>&1)
+
     if [ $? -ne 0 ]; then
         handle_error "Terraform Init" "$TF_INIT_OUTPUT"
     fi
@@ -267,6 +271,12 @@ stage_firewall() {
     echo -e "${GREEN}[ETAPA: FIREWALL] Configurando SDN Gateway${NC}"
     echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
 
+    # Cargar secretos si no están presentes (para notificaciones de error)
+    if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
+        echo -e "${CYAN}[*] Cargando secretos para notificaciones...${NC}"
+        source <(sops -d secrets.enc.env) || handle_error "Carga de Secretos" "No se pudo desencriptar secrets.enc.env"
+    fi
+
     CURRENT_STEP="Configuración de Firewall SDN"
     echo -e "${CYAN}[*] Aplicando reglas de firewall en doom-gateway...${NC}"
     ansible-playbook -i localhost, ansible/sdn-gateway/deploy-firewall.yml > /dev/null 2>&1 || handle_error "Ansible SDN" "Fallo en aplicación de reglas de firewall."
@@ -283,6 +293,12 @@ stage_infra() {
     echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
     echo -e "${GREEN}[ETAPA: INFRA] Desplegando infraestructura en Proxmox${NC}"
     echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+
+    # Cargar secretos si no están presentes (necesarios para backend S3 de Terraform)
+    if [ -z "$AWS_ACCESS_KEY_ID" ]; then
+        echo -e "${CYAN}[*] Cargando secretos para backend Terraform...${NC}"
+        source <(sops -d secrets.enc.env) || handle_error "Carga de Secretos" "No se pudo desencriptar secrets.enc.env"
+    fi
 
     # Terraform Init (siempre necesario)
     terraform_init
@@ -334,6 +350,13 @@ stage_config() {
     echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
     echo -e "${GREEN}[ETAPA: CONFIG] Configurando software${NC}"
     echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+
+    # Cargar secretos si no están presentes (para notificaciones de error)
+    # Nota: Los playbooks usan lookup directo a secrets.enc.yaml
+    if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
+        echo -e "${CYAN}[*] Cargando secretos para notificaciones...${NC}"
+        source <(sops -d secrets.enc.env) || handle_error "Carga de Secretos" "No se pudo desencriptar secrets.enc.env"
+    fi
 
     CURRENT_STEP="Configuración Base (setup_base.yml)"
     echo -e "${CYAN}[*] Aplicando configuración base a los nodos...${NC}"
