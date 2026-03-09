@@ -2,23 +2,40 @@ name: EVE - Automated Deployment
 
 on:
   push:
-    branches: [ dev, main ]  # Se dispara en ambas, el orquestador decide el storage
-  workflow_dispatch:         # También permite ejecución manual
+    branches: [ dev, main ]
+  workflow_dispatch:
 
 jobs:
   deploy:
-    name: Infrastructure Sync
-    runs-on: eve  # Runner consistente con sanity-check
+    name: Infrastructure Deployment
+    runs-on: eve
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Execute EVE Orchestrator
+      - name: Stage 1 - Validate
         run: |
           chmod +x orchestrator.sh
-          ./orchestrator.sh
+          ./orchestrator.sh --stage-validate
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
+      - name: Stage 2 - Firewall SDN
+        run: ./orchestrator.sh --stage-firewall
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      - name: Stage 3 - Infrastructure (Terraform + SSH)
+        run: ./orchestrator.sh --stage-infra
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      - name: Stage 4 - Configuration (Ansible)
+        run: ./orchestrator.sh --stage-config
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

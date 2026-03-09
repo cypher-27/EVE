@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# EVE Orchestrator - The Grand Director (CI/CD Armored Version)
+# EVE Orchestrator - The Grand Director (Modular CI/CD Version)
 # ==============================================================================
 
 # Colores
@@ -40,31 +40,38 @@ check_dependencies() {
         exit 1
     fi
 }
-check_dependencies
 
 # --- VALIDACIÓN DE ARCHIVOS REQUERIDOS ---
-if [ ! -f "lab-state.yaml" ]; then
-    echo -e "${RED}[ERROR] No se encuentra lab-state.yaml${NC}"
-    exit 1
-fi
-
-if [ ! -f "secrets.enc.env" ]; then
-    echo -e "${RED}[ERROR] No se encuentra secrets.enc.env${NC}"
-    exit 1
-fi
+check_required_files() {
+    if [ ! -f "lab-state.yaml" ]; then
+        echo -e "${RED}[ERROR] No se encuentra lab-state.yaml${NC}"
+        exit 1
+    fi
+    if [ ! -f "secrets.enc.env" ]; then
+        echo -e "${RED}[ERROR] No se encuentra secrets.enc.env${NC}"
+        exit 1
+    fi
+}
 
 # --- PROCESAMIENTO DE ARGUMENTOS ---
 ACTION="apply"
 FORCE=false
+STAGE="all"
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --destroy) ACTION="destroy" ;;
         --plan) ACTION="plan" ;;
         --force) FORCE=true ;;
+        --stage-validate) STAGE="validate" ;;
+        --stage-firewall) STAGE="firewall" ;;
+        --stage-infra) STAGE="infra" ;;
+        --stage-config) STAGE="config" ;;
+        --stage-all) STAGE="all" ;;
         *)
             echo -e "${RED}[ERROR] Argumento desconocido: $1${NC}"
             echo "Uso: $0 [--destroy] [--plan] [--force]"
+            echo "     $0 --stage-validate|--stage-firewall|--stage-infra|--stage-config"
             exit 1
             ;;
     esac
@@ -74,7 +81,28 @@ done
 # Variables de seguimiento
 CURRENT_STEP="Inicialización"
 IN_PROGRESS=true
-TERRAFORM_APPLIED=false  # Para rollback automático en caso de error
+STATE_FILE="/tmp/eve-orchestrator-state-$(whoami).env"
+
+# Cargar estado previo si existe (para etapas separadas)
+if [ -f "$STATE_FILE" ]; then
+    source "$STATE_FILE"
+    echo -e "${CYAN}[*] Estado previo cargado: TERRAFORM_APPLIED=$TERRAFORM_APPLIED${NC}"
+fi
+
+# Valores por defecto si no hay estado previo
+TERRAFORM_APPLIED=${TERRAFORM_APPLIED:-false}
+SDN_APPLIED=${SDN_APPLIED:-false}
+
+# Función para guardar estado
+save_state() {
+    echo "TERRAFORM_APPLIED=$TERRAFORM_APPLIED" > "$STATE_FILE"
+    echo "SDN_APPLIED=$SDN_APPLIED" >> "$STATE_FILE"
+}
+
+# Función para limpiar estado
+clear_state() {
+    rm -f "$STATE_FILE" 2>/dev/null
+}
 
 # --- FUNCIONES DE SOPORTE ---
 send_telegram() {
@@ -89,8 +117,7 @@ send_telegram() {
 handle_error() {
     local step="$1"
     local error_log="$2"
-    # NO seteamos IN_PROGRESS=false aquí para permitir que el trap ejecute el rollback
-    cd "$SCRIPT_DIR"  # Siempre volver al directorio base antes de salir
+    cd "$SCRIPT_DIR"
     echo -e "${RED}[ERROR] Fallo en: ${step}${NC}"
     send_telegram "❌ *ERROR CRÍTICO* en etapa: \`${step}\`\n\n⚠ *Detalle:*\n${error_log}"
     exit 1
@@ -99,19 +126,16 @@ handle_error() {
 wait_for_ssh() {
     local ip=$1
 
-    # Validación básica de IP
     if [[ ! "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         echo -e "${YELLOW}[!] IP inválida detectada: $ip (saltando)${NC}"
         return
     fi
 
     echo -e "${GREEN}Esperando SSH en $ip...${NC}"
-
-    # Dar tiempo a que la VM/LXC termine de arrancar
     echo -e "${CYAN}[*] Esperando 10s iniciales para boot...${NC}"
     sleep 10
 
-    local max_retries=90   # 90 reintentos x 2s = 180 segundos (3 minutos total)
+    local max_retries=90
     local count=0
 
     until nc -z -w5 "$ip" 22 2>/dev/null; do
@@ -126,14 +150,25 @@ wait_for_ssh() {
         fi
     done
 
-    # Purgar known_hosts para evitar conflictos de fingerprint
     ssh-keygen -f "$HOME/.ssh/known_hosts" -R "$ip" > /dev/null 2>&1
     echo -e "${GREEN}✓ SSH disponible en $ip${NC}"
 }
 
+# --- FUNCIONES DE TERRAFORM ---
+terraform_init() {
+    echo -e "${CYAN}[*] Inicializando Terraform...${NC}"
+    cd "$SCRIPT_DIR/terraform" || handle_error "Navegación" "No se puede acceder al directorio terraform/"
+    TF_INIT_OUTPUT=$(terraform init -input=false -backend-config="dynamodb_table=devilhunters-terraform-lock" 2>&1)
+    if [ $? -ne 0 ]; then
+        handle_error "Terraform Init" "$TF_INIT_OUTPUT"
+    fi
+    cd "$SCRIPT_DIR"
+}
+
+# --- CLEANUP CON ROLLBACK GRANULAR ---
 cleanup() {
     local exit_code=$?
-    if [ "$IN_PROGRESS" = true ] && [ "$ACTION" != "plan" ]; then
+    if [ "$IN_PROGRESS" = true ] && [ "$ACTION" != "plan" ] && [ "$STAGE" != "validate" ]; then
         echo -e "\n${RED}[!] ERROR DETECTADO (Código: $exit_code)${NC}"
         echo -e "${YELLOW}[!] Etapa fallida: $CURRENT_STEP${NC}"
 
@@ -145,9 +180,20 @@ cleanup() {
             terraform destroy -auto-approve 2>&1
             cd "$SCRIPT_DIR"
             echo -e "${YELLOW}[!] Rollback completado. Infraestructura destruida.${NC}"
+        elif [ "$SDN_APPLIED" = true ]; then
+            echo -e "${YELLOW}[!] SDN había sido configurado. Limpiando reglas de firewall...${NC}"
+            ansible-playbook -i localhost, ansible/sdn-gateway/cleanup-firewall.yml > /dev/null 2>&1 || true
+            echo -e "${YELLOW}[!] Reglas de firewall limpiadas.${NC}"
         fi
 
-        local msg="⚠ *EJECUCIÓN FALLIDA*\n\n📍 *Etapa:* \`$CURRENT_STEP\`\n🚫 *Exit code:* $exit_code\n🔄 *Rollback:* $([ "$TERRAFORM_APPLIED" = true ] && echo '✅ Ejecutado' || echo '➖ No necesario')"
+        # Limpiar archivo de estado
+        clear_state
+
+        local rollback_status="➖ No necesario"
+        [ "$TERRAFORM_APPLIED" = true ] && rollback_status="✅ Infraestructura destruida"
+        [ "$SDN_APPLIED" = true ] && [ "$TERRAFORM_APPLIED" = false ] && rollback_status="✅ Firewall limpiado"
+
+        local msg="⚠ *EJECUCIÓN FALLIDA*\n\n📍 *Etapa:* \`$CURRENT_STEP\`\n🚫 *Exit code:* $exit_code\n🔄 *Rollback:* $rollback_status"
         send_telegram "$msg"
     fi
     IN_PROGRESS=false
@@ -156,98 +202,99 @@ cleanup() {
 
 trap cleanup EXIT SIGINT SIGTERM
 
-# --- AUTO-LOAD SECRETS ---
-CURRENT_STEP="Carga de Secretos"
-if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
-    echo -e "${GREEN}[*] Secretos no detectados. Cargando vía SOPS...${NC}"
-    source <(sops -d secrets.enc.env) || handle_error "Carga de Secretos" "No se pudo desencriptar secrets.enc.env"
-fi
-
 # ==============================================================================
-# LÓGICA DE EJECUCIÓN PRINCIPAL
+# ETAPAS MODULARES
 # ==============================================================================
 
-if [ "$ACTION" == "destroy" ]; then
-    CURRENT_STEP="Destrucción"
-    if [ "$FORCE" = false ]; then
-        echo -e "${RED}⚠ PELIGRO: Para destruir sin confirmación debes usar --force.${NC}"
-        exit 1
+stage_validate() {
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}[ETAPA: VALIDATE] Validando estado del sistema${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+
+    CURRENT_STEP="Verificación de Dependencias"
+    check_dependencies
+    echo -e "${GREEN}✓ Dependencias verificadas${NC}"
+
+    CURRENT_STEP="Verificación de Archivos"
+    check_required_files
+    echo -e "${GREEN}✓ Archivos requeridos presentes${NC}"
+
+    CURRENT_STEP="Carga de Secretos"
+    if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
+        echo -e "${CYAN}[*] Secretos no detectados. Cargando vía SOPS...${NC}"
+        source <(sops -d secrets.enc.env) || handle_error "Carga de Secretos" "No se pudo desencriptar secrets.enc.env"
     fi
+    echo -e "${GREEN}✓ Secretos cargados${NC}"
 
-    send_telegram "*AVISO*: Iniciando destrucción de infraestructura..."
-    echo -e "${GREEN}[1/2] Ejecutando Terraform Destroy...${NC}"
-    cd "$SCRIPT_DIR/terraform" || handle_error "Navegación" "No se puede acceder al directorio terraform/"
-    TF_DESTROY=$(terraform destroy -auto-approve 2>&1)
+    CURRENT_STEP="Validación de Contrato (validator.py)"
+    python3 validator.py || handle_error "Validación de Contrato" "El lab-state.yaml viola las leyes del cluster."
+    echo -e "${GREEN}✓ Contrato validado${NC}"
+
+    CURRENT_STEP="Terraform Init + Validate"
+    terraform_init
+    cd "$SCRIPT_DIR/terraform"
+    TF_VALIDATE_OUTPUT=$(terraform validate 2>&1)
     if [ $? -ne 0 ]; then
-        handle_error "Terraform Destroy" "$TF_DESTROY"
+        handle_error "Linting Terraform" "$TF_VALIDATE_OUTPUT"
     fi
     cd "$SCRIPT_DIR"
+    echo -e "${GREEN}✓ Terraform validado${NC}"
 
-    CURRENT_STEP="SDN Cleanup"
-    echo -e "${GREEN}[2/2] Limpiando reglas de firewall...${NC}"
-    ansible-playbook -i localhost, ansible/sdn-gateway/cleanup-firewall.yml > /dev/null || handle_error "Limpieza SDN" "Fallo en purga de iptables."
-    
-    IN_PROGRESS=false
-    echo -e "${GREEN}¡Laboratorio destruido con éxito!${NC}"
-    send_telegram "*LABORATORIO DESTRUIDO*."
-    exit 0
-fi
+    CURRENT_STEP="Linting Ansible"
+    ansible-playbook ansible/sdn-gateway/deploy-firewall.yml --syntax-check > /dev/null 2>&1 || handle_error "Linting Ansible SDN" "Error en playbook de firewall"
+    ansible-playbook ansible/node-config/setup_base.yml --syntax-check > /dev/null 2>&1 || handle_error "Linting Ansible Node" "Error en playbook de configuración"
+    ansible-playbook ansible/monitor/setup_monitor.yml --syntax-check > /dev/null 2>&1 || handle_error "Linting Ansible Monitor" "Error en playbook de monitoreo"
+    echo -e "${GREEN}✓ Ansible validado${NC}"
 
-if [ "$ACTION" == "plan" ]; then
-    CURRENT_STEP="Terraform Plan"
-    echo -e "${CYAN}[*] Modo PLAN: Solo lectura, no se aplicarán cambios.${NC}"
-    python3 validator.py || { cd "$SCRIPT_DIR"; exit 1; }
-    cd "$SCRIPT_DIR/terraform" || { cd "$SCRIPT_DIR"; exit 1; }
-    terraform init -input=false -backend-config="dynamodb_table=devilhunters-terraform-lock" > /dev/null 2>&1
-    terraform plan
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}[ETAPA: VALIDATE] ✓ Completada exitosamente${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+}
+
+stage_firewall() {
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}[ETAPA: FIREWALL] Configurando SDN Gateway${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+
+    CURRENT_STEP="Configuración de Firewall SDN"
+    echo -e "${CYAN}[*] Aplicando reglas de firewall en doom-gateway...${NC}"
+    ansible-playbook -i localhost, ansible/sdn-gateway/deploy-firewall.yml > /dev/null 2>&1 || handle_error "Ansible SDN" "Fallo en aplicación de reglas de firewall."
+    SDN_APPLIED=true
+    save_state
+    echo -e "${GREEN}✓ Reglas de firewall aplicadas${NC}"
+
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}[ETAPA: FIREWALL] ✓ Completada exitosamente${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+}
+
+stage_infra() {
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}[ETAPA: INFRA] Desplegando infraestructura en Proxmox${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+
+    # Terraform Init (siempre necesario)
+    terraform_init
+
+    CURRENT_STEP="Despliegue Terraform"
+    echo -e "${CYAN}[*] Ejecutando terraform apply...${NC}"
+    send_telegram "🚀 Iniciando despliegue de infraestructura..."
+    cd "$SCRIPT_DIR/terraform" || handle_error "Navegación" "No se puede acceder al directorio terraform/"
+    TF_OUTPUT=$(terraform apply -auto-approve 2>&1)
+    if [ $? -ne 0 ]; then
+        if echo "$TF_OUTPUT" | grep -q "Error acquiring the state lock"; then
+            handle_error "Terraform Lock" "State bloqueado por otro proceso. Espera o libera el lock manualmente."
+        fi
+        handle_error "Terraform Apply" "$TF_OUTPUT"
+    fi
+    TERRAFORM_APPLIED=true
+    save_state
     cd "$SCRIPT_DIR"
-    IN_PROGRESS=false
-    exit 0
-fi
+    echo -e "${GREEN}✓ Infraestructura desplegada${NC}"
 
-# --- MODO APPLY (Despliegue Normal) ---
-
-# 0. VALIDACIÓN
-echo -e "${GREEN}[0/5] Validando recursos del cluster...${NC}"
-python3 validator.py || handle_error "Validación de Contrato" "El lab-state.yaml viola las leyes del cluster."
-
-# 1. PRE-FLIGHT CHECKS & INIT
-CURRENT_STEP="Pre-flight Checks"
-echo -e "${GREEN}[1/5] Sincronizando proveedores y validando sintaxis...${NC}"
-cd terraform || handle_error "Navegación" "No se puede acceder al directorio terraform/"
-TF_INIT_OUTPUT=$(terraform init -input=false -backend-config="dynamodb_table=devilhunters-terraform-lock" 2>&1)
-if [ $? -ne 0 ]; then
-    handle_error "Terraform Init" "$TF_INIT_OUTPUT"
-fi
-TF_VALIDATE_OUTPUT=$(terraform validate 2>&1)
-if [ $? -ne 0 ]; then
-    handle_error "Linting Terraform" "$TF_VALIDATE_OUTPUT"
-fi
-cd "$SCRIPT_DIR"
-ansible-playbook ansible/sdn-gateway/deploy-firewall.yml --syntax-check > /dev/null 2>&1 || handle_error "Linting Ansible SDN" "Error en red"
-ansible-playbook ansible/node-config/setup_base.yml --syntax-check > /dev/null 2>&1 || handle_error "Linting Ansible Node" "Error en config"
-
-# 2. RED (ANSIBLE SDN)
-CURRENT_STEP="Configuración de Red (SDN)"
-echo -e "${GREEN}[2/5] Configurando Firewall en SDN Gateway...${NC}"
-ansible-playbook -i localhost, ansible/sdn-gateway/deploy-firewall.yml > /dev/null 2>&1 || handle_error "Ansible SDN" "Fallo en aplicación de red."
-
-# 3. INFRAESTRUCTURA (TERRAFORM)
-CURRENT_STEP="Despliegue Terraform"
-echo -e "${GREEN}[3/5] Desplegando en Proxmox con Terraform...${NC}"
-send_telegram "🚀 Iniciando despliegue de infraestructura..."
-cd "$SCRIPT_DIR/terraform" || handle_error "Navegación" "No se puede acceder al directorio terraform/"
-TF_OUTPUT=$(terraform apply -auto-approve 2>&1)
-if [ $? -ne 0 ]; then
-    handle_error "Terraform Apply" "$TF_OUTPUT"
-fi
-TERRAFORM_APPLIED=true  # Marcar para posible rollback
-cd "$SCRIPT_DIR"
-
-# 4. ESPERA SSH
-CURRENT_STEP="Espera de Conectividad (Wait for SSH)"
-echo -e "${GREEN}[4/5] Comprobando conectividad de las VMs...${NC}"
-VMS_IPS=$(python3 -c "
+    CURRENT_STEP="Espera de Conectividad SSH"
+    echo -e "${CYAN}[*] Comprobando conectividad de las VMs/LXCs...${NC}"
+    VMS_IPS=$(python3 -c "
 import yaml
 try:
     with open('lab-state.yaml') as f:
@@ -260,26 +307,131 @@ except Exception:
     pass
 " 2>/dev/null)
 
-if [ ! -z "$VMS_IPS" ]; then
-    for ip in $VMS_IPS; do wait_for_ssh "$ip"; done
-    echo -e "${GREEN}[*] Estabilizando servicios (30s)...${NC}"
-    sleep 30
+    if [ ! -z "$VMS_IPS" ]; then
+        for ip in $VMS_IPS; do wait_for_ssh "$ip"; done
+        echo -e "${CYAN}[*] Estabilizando servicios (30s)...${NC}"
+        sleep 30
+    fi
+    echo -e "${GREEN}✓ Conectividad SSH verificada${NC}"
+
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}[ETAPA: INFRA] ✓ Completada exitosamente${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+}
+
+stage_config() {
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}[ETAPA: CONFIG] Configurando software${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+
+    CURRENT_STEP="Configuración Base (setup_base.yml)"
+    echo -e "${CYAN}[*] Aplicando configuración base a los nodos...${NC}"
+    NODE_OUTPUT=$(ansible-playbook -i localhost, ansible/node-config/setup_base.yml 2>&1)
+    if [ $? -ne 0 ]; then
+        handle_error "Ansible Node Config" "$NODE_OUTPUT"
+    fi
+    echo -e "${GREEN}✓ Configuración base aplicada${NC}"
+
+    CURRENT_STEP="Configuración de Monitoreo (setup_monitor.yml)"
+    echo -e "${CYAN}[*] Configurando stack de monitoreo...${NC}"
+    MONITOR_OUTPUT=$(ansible-playbook -i localhost, ansible/monitor/setup_monitor.yml 2>&1)
+    if [ $? -ne 0 ]; then
+        handle_error "Ansible Monitor Config" "$MONITOR_OUTPUT"
+    fi
+    echo -e "${GREEN}✓ Monitoreo configurado${NC}"
+
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}[ETAPA: CONFIG] ✓ Completada exitosamente${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+}
+
+# ==============================================================================
+# LÓGICA DE EJECUCIÓN PRINCIPAL
+# ==============================================================================
+
+# --- MODO DESTROY ---
+if [ "$ACTION" == "destroy" ]; then
+    CURRENT_STEP="Destrucción"
+    if [ "$FORCE" = false ]; then
+        echo -e "${RED}⚠ PELIGRO: Para destruir sin confirmación debes usar --force.${NC}"
+        exit 1
+    fi
+
+    send_telegram "🧹 *AVISO*: Iniciando destrucción de infraestructura..."
+
+    echo -e "${GREEN}[1/3] Inicializando Terraform...${NC}"
+    terraform_init
+
+    echo -e "${GREEN}[2/3] Ejecutando Terraform Destroy...${NC}"
+    cd "$SCRIPT_DIR/terraform" || handle_error "Navegación" "No se puede acceder al directorio terraform/"
+    TF_DESTROY=$(terraform destroy -auto-approve 2>&1)
+    if [ $? -ne 0 ]; then
+        if echo "$TF_DESTROY" | grep -q "Error acquiring the state lock"; then
+            handle_error "Terraform Lock" "State bloqueado. Espera o libera el lock manualmente."
+        fi
+        handle_error "Terraform Destroy" "$TF_DESTROY"
+    fi
+    cd "$SCRIPT_DIR"
+
+    echo -e "${GREEN}[3/3] Limpiando reglas de firewall...${NC}"
+    ansible-playbook -i localhost, ansible/sdn-gateway/cleanup-firewall.yml > /dev/null 2>&1 || true
+
+    IN_PROGRESS=false
+    clear_state
+    echo -e "${GREEN}¡Laboratorio destruido con éxito!${NC}"
+    send_telegram "✅ *LABORATORIO DESTRUIDO*."
+    exit 0
 fi
 
-# 5. CONFIGURACIÓN (ANSIBLE NODES)
-CURRENT_STEP="Configuración de Software (Ansible)"
-echo -e "${GREEN}[5/5] Configurando Software y Roles...${NC}"
+# --- MODO PLAN ---
+if [ "$ACTION" == "plan" ]; then
+    CURRENT_STEP="Terraform Plan"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}[MODO PLAN] Solo lectura, no se aplicarán cambios.${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
 
-echo -e "${CYAN}[5.1] Aplicando Configuración Base...${NC}"
-NODE_OUTPUT=$(ansible-playbook -i localhost, ansible/node-config/setup_base.yml 2>&1)
-if [ $? -ne 0 ]; then handle_error "Ansible Node Config" "$NODE_OUTPUT"; fi
+    check_dependencies
+    check_required_files
+    python3 validator.py || exit 1
+    terraform_init
+    cd "$SCRIPT_DIR/terraform"
+    terraform plan
+    cd "$SCRIPT_DIR"
 
-echo -e "${CYAN}[5.2] Configurando Monitoreo...${NC}"
-MONITOR_OUTPUT=$(ansible-playbook -i localhost, ansible/monitor/setup_monitor.yml 2>&1)
-if [ $? -ne 0 ]; then handle_error "Ansible Monitor Config" "$MONITOR_OUTPUT"; fi
+    IN_PROGRESS=false
+    clear_state
+    exit 0
+fi
 
-# --- FINALIZACIÓN ---
-IN_PROGRESS=false
-echo -e "${GREEN}¡Despliegue Completo!${NC}"
-send_telegram "✅ *DESPLIEGUE COMPLETO Y APLICADO*"
+# --- MODO STAGE (Ejecución Modular) ---
+case "$STAGE" in
+    validate)
+        stage_validate
+        ;;
+    firewall)
+        stage_firewall
+        ;;
+    infra)
+        stage_infra
+        ;;
+    config)
+        stage_config
+        ;;
+    all)
+        # Ejecutar todas las etapas en orden
+        stage_validate
+        stage_firewall
+        stage_infra
+        stage_config
 
+        # Finalización
+        IN_PROGRESS=false
+        clear_state
+        echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+        echo -e "${GREEN}✅ DESPLIEGUE COMPLETO${NC}"
+        echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+        send_telegram "✅ *DESPLIEGUE COMPLETO Y APLICADO*"
+        ;;
+esac
+
+exit 0
