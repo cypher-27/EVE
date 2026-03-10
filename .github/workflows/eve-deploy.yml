@@ -66,7 +66,7 @@ jobs:
         run: |
           source <(sops -d secrets.enc.env) || { echo "Error cargando secretos"; exit 0; }
           ENTORNO="${{ steps.entorno.outputs.env }}"
-          MSG="✅ *DESPLIEGUE COMPLETO*\n🎯 *Entorno:* ${ENTORNO}\n📋 *Rama:* \`${{ github.ref_name }}\`"
+          MSG=$(printf '✅ *DESPLIEGUE COMPLETO*\n🎯 *Entorno:* %s\n📋 *Rama:* `%s`' "$ENTORNO" "${{ github.ref_name }}")
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=${MSG}" \
