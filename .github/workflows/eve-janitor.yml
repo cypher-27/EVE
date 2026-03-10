@@ -47,7 +47,7 @@ jobs:
 
       - name: Notificar inicio
         run: |
-          eval $(sops -d secrets.enc.env)
+          source <(sops -d secrets.enc.env) || { echo "❌ Error desencriptando secretos"; exit 1; }
           TARGET="${{ env.TARGET_ENV }}"
           MODO="${{ github.event_name }}"
           [ "$MODO" == "schedule" ] && MODO_TEXTO="Automático" || MODO_TEXTO="Manual"
@@ -68,7 +68,7 @@ jobs:
       - name: Notificar resultado
         if: always()
         run: |
-          eval $(sops -d secrets.enc.env)
+          source <(sops -d secrets.enc.env) || { echo "❌ Error desencriptando secretos"; exit 1; }
           TARGET="${{ env.TARGET_ENV }}"
           if [[ "${{ job.status }}" == "success" ]]; then
             EMOJI="✅"
