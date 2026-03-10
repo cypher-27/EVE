@@ -15,12 +15,17 @@ NC='\033[0m'
 export ANSIBLE_HOST_KEY_CHECKING=False
 
 # --- DETECCIÓN DE ENTORNO (CI/CD) ---
-if [[ "$GITHUB_REF" == *"refs/heads/main"* ]]; then
-    export TF_VAR_eve_env="main"
-    echo -e "${CYAN}[*] Entorno detectado: MAIN (Producción - SSD ZFS)${NC}"
+# Respetar TF_VAR_eve_env si ya está establecido (ej: desde el Janitor)
+if [ -z "$TF_VAR_eve_env" ]; then
+    if [[ "$GITHUB_REF" == *"refs/heads/main"* ]]; then
+        export TF_VAR_eve_env="main"
+        echo -e "${CYAN}[*] Entorno detectado: MAIN (Producción - SSD ZFS)${NC}"
+    else
+        export TF_VAR_eve_env="dev"
+        echo -e "${YELLOW}[*] Entorno detectado: DEV (Efímero - HDD)${NC}"
+    fi
 else
-    export TF_VAR_eve_env="dev"
-    echo -e "${YELLOW}[*] Entorno detectado: DEV (Efímero - HDD)${NC}"
+    echo -e "${GREEN}[*] Entorno especificado: ${TF_VAR_eve_env}${NC}"
 fi
 
 # --- DIRECTORIO BASE (para volver siempre aquí) ---
