@@ -2,24 +2,32 @@ name: EVE - Janitor
 
 on:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 0 * * *'   # Daily — ephemeral only
   workflow_dispatch:
     inputs:
+      mode:
+        description: 'Cleanup scope'
+        required: true
+        default: 'ephemeral'
+        type: choice
+        options:
+          - ephemeral       # Only efimero: true resources
+          - full-lab        # All non-core resources
       confirmacion:
-        description: 'Type "DESTROY" to confirm ephemeral cleanup'
+        description: 'Type "DESTROY" to confirm'
         required: true
         default: ''
 
 jobs:
   cleanup:
-    name: Ephemeral Cleanup
+    name: Infrastructure Cleanup
     runs-on: eve
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate confirmation (manual only)
+      - name: Validate confirmation
         if: github.event_name == 'workflow_dispatch'
         run: |
           if [[ "${{ github.event.inputs.confirmacion }}" != "DESTROY" ]]; then
@@ -27,22 +35,33 @@ jobs:
             exit 1
           fi
 
-      - name: Mark ephemeral resources as absent
+      - name: Mark resources as absent
         run: |
-          python3 - <<'EOF'
-          import yaml
+          MODE="${{ github.event_name == 'schedule' && 'ephemeral' || github.event.inputs.mode }}"
+          python3 - <<EOF
+          import yaml, os
+
+          mode = os.environ.get('JANITOR_MODE', 'ephemeral')
 
           with open('lab-state.yaml', 'r') as f:
               data = yaml.safe_load(f)
 
           changed = []
           for env in data.get('entornos', []):
-              if env.get('efimero', False) and env.get('estado') == 'presente':
+              if env.get('core', False):
+                  continue                          # Never touch core
+              if env.get('estado') != 'presente':
+                  continue                          # Already absent
+
+              if mode == 'ephemeral' and env.get('efimero', False):
+                  env['estado'] = 'ausente'
+                  changed.append(env['nombre'])
+              elif mode == 'full-lab':              # All non-core, regardless of efimero
                   env['estado'] = 'ausente'
                   changed.append(env['nombre'])
 
           if not changed:
-              print("No ephemeral resources to clean up.")
+              print("Nothing to clean up.")
               exit(0)
 
           with open('lab-state.yaml', 'w') as f:
@@ -50,6 +69,8 @@ jobs:
 
           print(f"Marked as absent: {', '.join(changed)}")
           EOF
+        env:
+          JANITOR_MODE: ${{ github.event_name == 'schedule' && 'ephemeral' || github.event.inputs.mode }}
 
       - name: Notify start
         run: |
@@ -57,14 +78,15 @@ jobs:
           import sys, yaml
           for k, v in yaml.safe_load(sys.stdin).items():
               print(f\"export {k.upper()}='{v}'\")")
-          MSG=$(printf '🧹 *JANITOR*: Starting ephemeral cleanup\n👤 *Triggered by:* %s' \
-            "${{ github.actor }}")
+          MODE="${{ github.event_name == 'schedule' && 'ephemeral' || github.event.inputs.mode }}"
+          MSG=$(printf '🧹 *JANITOR* [%s]\nScope: *%s*\n👤 Triggered by: %s' \
+            "${{ github.event_name }}" "$MODE" "${{ github.actor }}")
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=${MSG}" \
             -d parse_mode="Markdown" > /dev/null
 
-      - name: Run deploy to apply absent state
+      - name: Apply absent state
         run: |
           chmod +x orchestrator.sh
           ./orchestrator.sh --stage-infra
@@ -79,9 +101,9 @@ jobs:
           for k, v in yaml.safe_load(sys.stdin).items():
               print(f\"export {k.upper()}='{v}'\")")
           if [[ "${{ job.status }}" == "success" ]]; then
-            MSG="✅ *JANITOR*: Ephemeral cleanup complete"
+            MSG="✅ *JANITOR*: Cleanup complete"
           else
-            MSG="❌ *JANITOR*: Ephemeral cleanup failed"
+            MSG="❌ *JANITOR*: Cleanup failed"
           fi
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
