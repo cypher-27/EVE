@@ -155,7 +155,7 @@ entornos:
     tipo: "vm"
     plantilla: "debian13-template"
     efimero: false
-    monitor_enabled: true
+    monitor_enabled: false
     nodo_proxmox: "reze"
     vmid: 102
     recursos:
