@@ -1,4 +1,4 @@
-kname: EVE - Deploy
+name: EVE - Deploy
 
 on:
   workflow_dispatch:
