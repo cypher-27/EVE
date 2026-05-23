@@ -43,6 +43,8 @@ resource "proxmox_vm_qemu" "entorno_vm" {
   for_each    = local.active_vms
 
   name        = each.value.nombre
+  vmid        = each.value.vmid
+  force_create = true
   target_node = each.value.nodo_proxmox
   clone       = each.value.plantilla
   agent       = 1
