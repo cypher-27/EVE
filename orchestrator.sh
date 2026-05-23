@@ -97,15 +97,15 @@ wait_for_ssh() {
         return
     fi
 
-    echo -e "${CYAN}[*] Waiting for SSH on $ip (initial 10s boot delay)...${NC}"
-    sleep 10
+    echo -e "${CYAN}[*] Waiting for SSH on $ip (initial 30s boot delay)...${NC}"
+    sleep 30
 
     local count=0
     until nc -z -w5 "$ip" 22 2>/dev/null; do
         echo -n "."
         sleep 2
         (( count++ ))
-        if [ "$count" -ge 90 ]; then
+        if [ "$count" -ge 150 ]; then
             echo -e "\n${RED}[!] Timeout: $ip did not respond after 3 minutes${NC}"
             ping -c 1 "$ip" 2>/dev/null \
                 && echo -e "${YELLOW}[!] Host responds to ping but not SSH${NC}" \
