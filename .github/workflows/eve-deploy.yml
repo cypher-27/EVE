@@ -3,14 +3,14 @@ name: EVE - Deploy
 on:
   workflow_dispatch:
     inputs:
-      entorno:
-        description: 'Entorno a desplegar'
+      mode:
+        description: 'Deployment mode'
         required: true
-        default: 'dev'
+        default: 'apply'
         type: choice
         options:
-          - dev
-          - main
+          - plan
+          - apply
 
 jobs:
   deploy:
@@ -26,22 +26,24 @@ jobs:
           chmod +x orchestrator.sh
           ./orchestrator.sh --stage-validate
         env:
-          TF_VAR_eve_env: ${{ github.event.inputs.entorno }}
+          TF_VAR_eve_env: "main"
 
       - name: Stage 2 - Firewall SDN
+        if: ${{ github.event.inputs.mode == 'apply' }}
         run: ./orchestrator.sh --stage-firewall
         env:
-          TF_VAR_eve_env: ${{ github.event.inputs.entorno }}
+          TF_VAR_eve_env: "main"
 
       - name: Stage 3 - Infrastructure
-        run: ./orchestrator.sh --stage-infra
+        run: ./orchestrator.sh ${{ github.event.inputs.mode == 'plan' && '--plan' || '--stage-infra' }}
         env:
-          TF_VAR_eve_env: ${{ github.event.inputs.entorno }}
+          TF_VAR_eve_env: "main"
 
       - name: Stage 4 - Configuration
+        if: ${{ github.event.inputs.mode == 'apply' }}
         run: ./orchestrator.sh --stage-config
         env:
-          TF_VAR_eve_env: ${{ github.event.inputs.entorno }}
+          TF_VAR_eve_env: "main"
 
       - name: Notify success
         if: success()
@@ -49,10 +51,9 @@ jobs:
           source <(sops -d secrets.enc.yaml | python3 -c "
           import sys, yaml
           for k, v in yaml.safe_load(sys.stdin).items():
-              print(f\"export {k.upper()}='{v}'\")
-          ")
-          MSG=$(printf '✅ *DEPLOY COMPLETE*\n🎯 *Environment:* %s\n👤 *Triggered by:* %s' \
-            "${{ github.event.inputs.entorno }}" \
+              print(f\"export {k.upper()}='{v}'\")")
+          MSG=$(printf '✅ *DEPLOY COMPLETE*\n🎯 *Mode:* %s\n👤 *Triggered by:* %s' \
+            "${{ github.event.inputs.mode }}" \
             "${{ github.actor }}")
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
