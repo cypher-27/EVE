@@ -4,17 +4,15 @@ A declarative homelab automation pipeline that provisions and manages virtual ma
 
 ## Architecture
 
-lab-state.yaml ← Single source of truth
-│
-▼
-validator.py ← Enforces topology & resource quotas before any action
-│
-▼
-orchestrator.sh ← Reads YAML, decides what to create/destroy/skip
-│
-├── terraform/ ← VM & LXC provisioning via Proxmox provider
-└── ansible/ ← Post-provision config, secrets injection, monitoring
-
+```mermaid
+flowchart TD
+    A[lab-state.yaml\nSingle Source of Truth] --> B[validator.py\nTopology & quota enforcement]
+    B --> C[orchestrator.sh\nMain pipeline]
+    C --> D[terraform/\nVM & LXC provisioning]
+    C --> E[ansible/\nPost-provision config & monitoring]
+    D --> F[(Proxmox\nmakima / reze)]
+    E --> F
+```
 
 ## Physical Topology
 
