@@ -346,6 +346,7 @@ if [ "$ACTION" = "plan" ]; then
     echo -e "${CYAN}[PLAN MODE] Read-only, no changes will be applied.${NC}"
     check_dependencies
     check_required_files
+    load_secrets
     python3 validator.py || exit 1
     terraform_init
     cd "$SCRIPT_DIR/terraform" && terraform plan
