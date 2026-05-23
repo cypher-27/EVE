@@ -6,12 +6,26 @@ A declarative homelab automation pipeline that provisions and manages virtual ma
 
 ```mermaid
 flowchart TD
-    A[lab-state.yaml\nSingle Source of Truth] --> B[validator.py\nTopology & quota enforcement]
+    A([lab-state.yaml\nSingle Source of Truth])
+
+    A --> B[validator.py\nTopology & quota enforcement]
     B --> C[orchestrator.sh\nMain pipeline]
+
     C --> D[terraform/\nVM & LXC provisioning]
-    C --> E[ansible/\nPost-provision config & monitoring]
-    D --> F[(Proxmox\nmakima / reze)]
-    E --> F
+    C --> E[ansible/\nPost-provision config]
+    C --> N[Telegram\nDeploy notifications]
+
+    D --> F[(Proxmox Cluster)]
+
+    F --> M[makima\nlocal-zfs 100GB · hdd_data 850GB]
+    F --> R[reze\nlocal-zfs 850GB]
+
+    E --> GW[sdn-gateway\nDynamic firewall rules]
+    E --> MON[eve-monitor\nVictoriaMetrics · Grafana]
+    E --> NODES[node-config\nBase system setup]
+
+    GW -->|iptables rules| F
+    MON -->|scrapes| F
 ```
 
 ## Physical Topology
