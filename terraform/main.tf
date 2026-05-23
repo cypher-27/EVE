@@ -49,6 +49,9 @@ resource "proxmox_vm_qemu" "entorno_vm" {
   full_clone  = true
   agent       = 1
 
+  boot     = "order=scsi0"
+  bootdisk = "scsi0"
+
   cpu {
     cores   = each.value.recursos.cores
     sockets = 1
@@ -58,24 +61,21 @@ resource "proxmox_vm_qemu" "entorno_vm" {
   memory = each.value.recursos.memoria
   scsihw = "virtio-scsi-single"
 
-  disks {
-    ide {
-      ide2 {
-        cloudinit {
-          storage = "local-zfs"
-        }
-      }
-    }
-    scsi {
-      scsi0 {
-        disk {
-          size      = "${each.value.recursos.disco}G"
-          storage   = local.storage_map[each.value.nodo_proxmox][var.eve_env]
-          iothread  = true
-          replicate = false
-        }
-      }
-    }
+  disk {
+    slot     = "scsi0"
+    type     = "disk"
+    storage  = local.storage_map[each.value.nodo_proxmox][var.eve_env]
+    size     = "${each.value.recursos.disco}G"
+    iothread = true
+    discard  = "on"
+    format   = "raw"
+  }
+
+  # Cloud-init — también como bloque legacy disk{} para consistencia con Telmate
+  disk {
+    slot    = "ide2"
+    type    = "cloudinit"
+    storage = "local-zfs"
   }
 
   network {
@@ -96,6 +96,7 @@ EOF
     ignore_changes = [
       clone,
       full_clone,
+      disk,
     ]
   }
 }
