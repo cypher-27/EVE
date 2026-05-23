@@ -1,110 +1,103 @@
 #!/bin/bash
+set -e
+
 # ==============================================================================
-# PROYECTO FÉNIX - EVE Bootstrap Script
-# Descripción: Reconstruye la estación de mando desde cero.
+# EVE Bootstrap — Prepares the command station from scratch
 # ==============================================================================
 
-set -e # Detener script si hay un error
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+RED='\033[0;31m'
+NC='\033[0m'
 
-# Colores para la terminal
-VERDE='\033[0;32m'
-AZUL='\033[0;34m'
-ROJO='\033[0;31m'
-NC='\033[0m' # No Color
+echo -e "${BLUE}[*] Starting EVE Bootstrap...${NC}"
 
-echo -e "${AZUL}[*] Iniciando Proyecto Fénix - Bootstrap de EVE...${NC}"
-
-# 1. ACTUALIZACIÓN E INSTALACIÓN BASE
-echo -e "${AZUL}[1/6] Actualizando sistema e instalando dependencias base...${NC}"
+# 1. BASE DEPENDENCIES
+echo -e "${BLUE}[1/6] Installing base dependencies...${NC}"
 sudo apt-get update -y
-sudo apt-get install -y curl wget gnupg software-properties-common git unzip python3-pip age
+sudo apt-get install -y curl wget gnupg software-properties-common git unzip python3-pip python3-yaml age
 
-# 2. TERRAFORM (HashiCorp Official)
-echo -e "${AZUL}[2/6] Verificando Terraform...${NC}"
+# 2. TERRAFORM
+echo -e "${BLUE}[2/6] Checking Terraform...${NC}"
 if ! command -v terraform &> /dev/null; then
-    echo "Instalando Terraform..."
+    echo "Installing Terraform..."
     wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
     echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
     sudo apt-get update -y && sudo apt-get install -y terraform
 else
-    echo -e "${VERDE}✓ Terraform ya está instalado.${NC}"
+    echo -e "${GREEN}✓ Terraform already installed${NC}"
 fi
 
-# 3. ANSIBLE Y COLECCIONES
-echo -e "${AZUL}[3/6] Verificando Ansible y Colecciones...${NC}"
+# 3. ANSIBLE
+echo -e "${BLUE}[3/6] Checking Ansible...${NC}"
 if ! command -v ansible &> /dev/null; then
-    echo "Instalando Ansible..."
+    echo "Installing Ansible..."
     sudo apt-get install -y ansible
 else
-    echo -e "${VERDE}✓ Ansible ya está instalado.${NC}"
+    echo -e "${GREEN}✓ Ansible already installed${NC}"
 fi
-
-echo "Instalando dependencias de Ansible (SOPS y General)..."
+echo "Installing Ansible collections..."
 ansible-galaxy collection install community.general community.sops --force
 
-# 4. SOPS (Mozilla Secret OPerationS)
-echo -e "${AZUL}[4/6] Verificando SOPS...${NC}"
+# 4. SOPS
+echo -e "${BLUE}[4/6] Checking SOPS...${NC}"
 if ! command -v sops &> /dev/null; then
-    echo "Instalando SOPS..."
+    echo "Installing SOPS..."
     SOPS_VERSION="v3.8.1"
     wget -qO sops https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux.amd64
     sudo mv sops /usr/local/bin/sops
     sudo chmod +x /usr/local/bin/sops
 else
-    echo -e "${VERDE}✓ SOPS ya está instalado.${NC}"
+    echo -e "${GREEN}✓ SOPS already installed${NC}"
 fi
 
-# 5. ZEROTIER (Red de Gestión)
-echo -e "${AZUL}[5/6] Verificando puente de red (ZeroTier)...${NC}"
+# 5. ZEROTIER
+echo -e "${BLUE}[5/6] Checking ZeroTier...${NC}"
 if ! command -v zerotier-cli &> /dev/null; then
-    echo "Instalando ZeroTier..."
+    echo "Installing ZeroTier..."
     curl -s https://install.zerotier.com | sudo bash
 else
-    echo -e "${VERDE}✓ ZeroTier ya está instalado.${NC}"
+    echo -e "${GREEN}✓ ZeroTier already installed${NC}"
 fi
 
-read -p "¿Deseas unirte a una red ZeroTier ahora? (y/n): " zt_resp
+read -p "Join a ZeroTier network now? (y/n): " zt_resp
 if [[ "$zt_resp" == "y" || "$zt_resp" == "Y" ]]; then
-    read -p "Introduce tu Network ID de ZeroTier: " zt_id
-    sudo zerotier-cli join $zt_id
-    echo -e "${VERDE}✓ Petición de unión enviada. (Recuerda autorizar el nodo en el portal web).${NC}"
+    read -p "Enter your ZeroTier Network ID: " zt_id
+    sudo zerotier-cli join "$zt_id"
+    echo -e "${GREEN}✓ Join request sent. Authorize the node at https://my.zerotier.com${NC}"
 fi
 
-# 6. CONFIGURACIÓN DE IDENTIDAD (AGE KEY)
-echo -e "${AZUL}[6/6] Configurando Identidad Criptográfica (Age)...${NC}"
+# 6. AGE KEY SETUP
+echo -e "${BLUE}[6/6] Configuring cryptographic identity (Age)...${NC}"
 AGE_DIR="$HOME/.config/sops/age"
 AGE_FILE="$AGE_DIR/keys.txt"
 
 mkdir -p "$AGE_DIR"
 
 if [ ! -f "$AGE_FILE" ]; then
-    echo -e "${ROJO}No se encontró la llave de Age en $AGE_FILE${NC}"
-    read -s -p "Pega aquí tu llave PRIVADA de Age (AGE-SECRET-KEY-...) y presiona Enter: " age_key
+    echo -e "${RED}Age key not found at $AGE_FILE${NC}"
+    read -s -p "Paste your Age PRIVATE key (AGE-SECRET-KEY-...) and press Enter: " age_key
     echo ""
-    if [[ $age_key == AGE-SECRET-KEY-* ]]; then
+    if [[ "$age_key" == AGE-SECRET-KEY-* ]]; then
         echo "$age_key" > "$AGE_FILE"
         chmod 600 "$AGE_FILE"
-        echo -e "${VERDE}✓ Llave guardada de forma segura en $AGE_FILE${NC}"
+        echo -e "${GREEN}✓ Key saved securely at $AGE_FILE${NC}"
     else
-        echo -e "${ROJO}Formato de llave inválido. Deberás configurarla manualmente.${NC}"
+        echo -e "${RED}Invalid key format. Configure it manually.${NC}"
     fi
 else
-    echo -e "${VERDE}✓ Llave de Age detectada.${NC}"
+    echo -e "${GREEN}✓ Age key already present${NC}"
 fi
 
-# Exportar variable en el perfil del usuario si no existe
-if ! grep -q "SOPS_AGE_KEY_FILE" "$HOME/.bashrc"; then
-    echo 'export SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt"' >> "$HOME/.bashrc"
-    echo -e "${VERDE}✓ Variable SOPS_AGE_KEY_FILE añadida a .bashrc${NC}"
-fi
-if [ -f "$HOME/.zshrc" ] && ! grep -q "SOPS_AGE_KEY_FILE" "$HOME/.zshrc"; then
-    echo 'export SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt"' >> "$HOME/.zshrc"
-    echo -e "${VERDE}✓ Variable SOPS_AGE_KEY_FILE añadida a .zshrc${NC}"
-fi
+for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    if [ -f "$rc" ] && ! grep -q "SOPS_AGE_KEY_FILE" "$rc"; then
+        echo 'export SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt"' >> "$rc"
+        echo -e "${GREEN}✓ SOPS_AGE_KEY_FILE added to $(basename $rc)${NC}"
+    fi
+done
 
-echo -e "\n${VERDE}================================================================${NC}"
-echo -e "${VERDE} ¡PROYECTO FÉNIX COMPLETADO! Estación de Mando Lista.${NC}"
-echo -e "${VERDE}================================================================${NC}"
-echo -e "Por favor, ejecuta: ${AZUL}source ~/.bashrc${NC} (o reinicia tu terminal) para cargar las variables."
-echo -e "Para levantar EVE, entra a la carpeta del proyecto y ejecuta: ${AZUL}./orchestrator.sh${NC}"
-
+echo -e "\n${GREEN}================================================================${NC}"
+echo -e "${GREEN} EVE Bootstrap complete. Command station ready.${NC}"
+echo -e "${GREEN}================================================================${NC}"
+echo -e "Run: ${BLUE}source ~/.bashrc${NC} to load environment variables."
+echo -e "Then: ${BLUE}./orchestrator.sh${NC} to deploy."
