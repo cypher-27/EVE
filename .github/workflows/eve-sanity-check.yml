@@ -1,51 +1,53 @@
-name: EVE - Sanity Check
+kkname: EVE - Sanity Check
 
 on:
-  workflow_dispatch:  # Solo ejecución manual
+  push:
+    branches: [ main ]
+  workflow_dispatch:
 
-# Definimos variables globales para que SOPS funcione
 env:
   SOPS_AGE_KEY_FILE: /home/runner/.config/sops/age/keys.txt
 
 jobs:
-  validate-environment:
+  sanity-check:
+    name: Validate Environment & Contract
     runs-on: eve
-    
+
     steps:
-      - name: 📂 Clonando repositorio
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🛠 Verificando herramientas de EVE
+      - name: Verify toolchain
         run: |
-          echo "[+] Hostname: $(hostname)"
-          echo "[+] Usuario: $(whoami)"
-          terraform version || exit 1
-          ansible --version || exit 1
-          sops --version || exit 1
+          echo "[+] Host: $(hostname) | User: $(whoami)"
+          terraform version   || exit 1
+          ansible --version   || exit 1
+          ansible-playbook --version || exit 1
+          sops --version      || exit 1
+          python3 --version   || exit 1
 
-      - name: 🔑 Verificando Identidad (Age)
+      - name: Verify Age identity
         run: |
-          if [ -f "$SOPS_AGE_KEY_FILE" ]; then
-            echo "✅ Llave de Age detectada en: $SOPS_AGE_KEY_FILE"
-            # Intento de lectura (sin mostrar contenido) para validar permisos
-            head -n 1 "$SOPS_AGE_KEY_FILE" > /dev/null
-          else
-            echo "❌ ERROR: No se encuentra la llave en $SOPS_AGE_KEY_FILE"
+          if [ ! -f "$SOPS_AGE_KEY_FILE" ]; then
+            echo "❌ Age key not found at $SOPS_AGE_KEY_FILE"
             exit 1
           fi
+          head -n 1 "$SOPS_AGE_KEY_FILE" > /dev/null
+          echo "✅ Age key present"
 
-      - name: 🌐 Verificando Conectividad ZeroTier
+      - name: Verify ZeroTier connectivity
         run: |
-          # Buscamos todas las interfaces que empiecen por 'zt'
-          ZT_IFACES=$(ip -br addr show | awk '{print $1}' | grep '^zt')
+          ZT_IFACES=$(ip -br addr show | awk '{print $1}' | grep '^zt' || true)
           if [ -z "$ZT_IFACES" ]; then
-            echo "⚠ Warning: No se detectó ninguna interfaz de ZeroTier activa."
+            echo "⚠ Warning: No active ZeroTier interface detected"
           else
-            echo "✅ Interfaces ZeroTier detectadas:"
-            echo "$ZT_IFACES" | while read -r iface; do
-              echo ""
-              echo "  🔹 Interfaz: $iface"
-              ip addr show "$iface" | grep "inet " | sed 's/^/    /'
-            done
+            echo "✅ ZeroTier interfaces: $ZT_IFACES"
           fi
+
+      - name: Validate lab-state contract
+        run: |
+          chmod +x orchestrator.sh
+          ./orchestrator.sh --stage-validate
+        env:
+          TF_VAR_eve_env: dev
 
