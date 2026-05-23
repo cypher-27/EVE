@@ -131,7 +131,7 @@ entornos:
 
 # === TEST RESOURCES (Temporary) ===
   - nombre: "eve-test-lxc"
-    estado: "ausente"
+    estado: "presente"
     tipo: "lxc"
     os: "alpine"
     efimero: true
@@ -141,7 +141,7 @@ entornos:
     recursos:
       cores: 1
       memoria: 256
-      disco: 4
+      disco: 1
     red:
       ip: "192.168.1.44/24"
       gateway: "192.168.1.30"
@@ -161,7 +161,7 @@ entornos:
     recursos:
       cores: 1
       memoria: 512
-      disco: 15
+      disco: 8
     red:
       ip: "192.168.1.45/24"
       gateway: "192.168.1.30"
