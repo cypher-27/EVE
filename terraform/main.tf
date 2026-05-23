@@ -49,7 +49,7 @@ resource "proxmox_vm_qemu" "entorno_vm" {
   full_clone  = true
   agent       = 1
 
-  boot   = "order=scsi0;ide2"
+  boot   = "order=scsi0"
 
   cpu {
     cores   = each.value.recursos.cores
@@ -60,25 +60,8 @@ resource "proxmox_vm_qemu" "entorno_vm" {
   memory = each.value.recursos.memoria
   scsihw = "virtio-scsi-single"
 
-  disks {
-    ide {
-      ide2 {
-        cloudinit {
-          storage = "local-zfs"
-        }
-      }
-    }
-    scsi {
-      scsi0 {
-        disk {
-          size      = "${each.value.recursos.disco}G"
-          storage   = local.storage_map[each.value.nodo_proxmox][var.eve_env]
-          iothread  = true
-          replicate = false
-        }
-      }
-    }
-  }
+  # SIN bloque disks — el clone hereda el disco de la plantilla (disk-0)
+  # Terraform no toca los discos, Proxmox los maneja al clonar
 
   network {
     id     = 0
@@ -94,11 +77,11 @@ resource "proxmox_vm_qemu" "entorno_vm" {
 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM9kG6lsmZBCtkdYOAIZwNJ5foJRHrRItjpNlQYrX4zT admin@eve
 EOF
 
-  # Evita que Terraform recree el disco en cada plan/apply
   lifecycle {
     ignore_changes = [
       clone,
       full_clone,
+      disk,
     ]
   }
 }
