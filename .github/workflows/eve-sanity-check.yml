@@ -1,4 +1,4 @@
-kkname: EVE - Sanity Check
+name: EVE - Sanity Check
 
 on:
   push:
