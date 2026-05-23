@@ -124,6 +124,7 @@ Diffs `lab-state.yaml` against Proxmox state and applies only the delta.
 
 ## Project Layout
 
+```text
 EVE/
 ├── lab-state.yaml
 ├── validator.py
@@ -139,6 +140,7 @@ EVE/
     ├── inventory/
     ├── playbooks/
     └── roles/
+```
 
 ## Supported Systems
 
