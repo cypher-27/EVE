@@ -1,8 +1,6 @@
-name: EVE - Automated Deployment
+kname: EVE - Deploy
 
 on:
-  push:
-    branches: [ dev, main ]
   workflow_dispatch:
     inputs:
       entorno:
@@ -20,23 +18,7 @@ jobs:
     runs-on: eve
 
     steps:
-      - name: Detectar entorno
-        id: entorno
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "env=${{ github.event.inputs.entorno }}" >> $GITHUB_OUTPUT
-            echo "🎛️ Modo MANUAL → Entorno: ${{ github.event.inputs.entorno }}"
-          else
-            if [[ "${{ github.ref }}" == *"main"* ]]; then
-              echo "env=main" >> $GITHUB_OUTPUT
-              echo "🚀 Modo PUSH → Entorno: MAIN (Producción)"
-            else
-              echo "env=dev" >> $GITHUB_OUTPUT
-              echo "🚀 Modo PUSH → Entorno: DEV (Efímero)"
-            fi
-          fi
-
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Stage 1 - Validate
@@ -44,30 +26,36 @@ jobs:
           chmod +x orchestrator.sh
           ./orchestrator.sh --stage-validate
         env:
-          TF_VAR_eve_env: ${{ steps.entorno.outputs.env }}
+          TF_VAR_eve_env: ${{ github.event.inputs.entorno }}
 
       - name: Stage 2 - Firewall SDN
         run: ./orchestrator.sh --stage-firewall
         env:
-          TF_VAR_eve_env: ${{ steps.entorno.outputs.env }}
+          TF_VAR_eve_env: ${{ github.event.inputs.entorno }}
 
       - name: Stage 3 - Infrastructure
         run: ./orchestrator.sh --stage-infra
         env:
-          TF_VAR_eve_env: ${{ steps.entorno.outputs.env }}
+          TF_VAR_eve_env: ${{ github.event.inputs.entorno }}
 
       - name: Stage 4 - Configuration
         run: ./orchestrator.sh --stage-config
         env:
-          TF_VAR_eve_env: ${{ steps.entorno.outputs.env }}
+          TF_VAR_eve_env: ${{ github.event.inputs.entorno }}
 
-      - name: Notificar despliegue exitoso
+      - name: Notify success
         if: success()
         run: |
-          source <(sops -d secrets.enc.env) || { echo "Error cargando secretos"; exit 0; }
-          ENTORNO="${{ steps.entorno.outputs.env }}"
-          MSG=$(printf '✅ *DESPLIEGUE COMPLETO*\n🎯 *Entorno:* %s\n📋 *Rama:* `%s`' "$ENTORNO" "${{ github.ref_name }}")
+          source <(sops -d secrets.enc.yaml | python3 -c "
+          import sys, yaml
+          for k, v in yaml.safe_load(sys.stdin).items():
+              print(f\"export {k.upper()}='{v}'\")
+          ")
+          MSG=$(printf '✅ *DEPLOY COMPLETE*\n🎯 *Environment:* %s\n👤 *Triggered by:* %s' \
+            "${{ github.event.inputs.entorno }}" \
+            "${{ github.actor }}")
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=${MSG}" \
             -d parse_mode="Markdown" > /dev/null
+
