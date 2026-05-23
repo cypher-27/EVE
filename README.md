@@ -145,7 +145,37 @@ EVE/
 - Python ≥ 3.10 with `pyyaml`
 - ZeroTier (out-of-band access)
 
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `PROXMOX_VE_URL` | Proxmox API URL |
+| `PROXMOX_VE_API_TOKEN` | API token (preferred auth method) |
+| `PROXMOX_VE_USERNAME` | Username (alternative to token) |
+| `PROXMOX_VE_PASSWORD` | Password (alternative to token) |
+| `TF_VAR_sops_age_key` | Age private key for SOPS decryption |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token for deploy notifications |
+| `TELEGRAM_CHAT_ID` | Target chat ID for notifications |
+
+## Monitoring
+
+Once `eve-monitor` is deployed, the stack is available at:
+
+- **Grafana** — `http://192.168.1.40:3000`
+- **VictoriaMetrics** — `http://192.168.1.40:8428`
+
+All nodes have Node Exporter installed and are scraped automatically.
+
+## Troubleshooting
+
+**Validator rejects the deployment** — verify the requested resources don't exceed cluster limits (11 vCPUs, 8GB RAM).
+
+**Terraform can't connect to Proxmox** — check that `PROXMOX_VE_*` variables are set and the API token has the required permissions.
+
+**Ansible can't reach the VM via SSH** — wait for cloud-init to finish; verify SSH keys were injected correctly.
+
+**Secrets fail to decrypt** — confirm `SOPS_AGE_KEY_FILE` points to the correct Age key (`~/.config/sops/age/keys.txt`).
+
 ## License
 
 MIT
-
