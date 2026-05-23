@@ -161,7 +161,7 @@ entornos:
     recursos:
       cores: 1
       memoria: 512
-      disco: 8
+      disco: 15
     red:
       ip: "192.168.1.45/24"
       gateway: "192.168.1.30"
