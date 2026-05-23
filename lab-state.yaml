@@ -131,7 +131,7 @@ entornos:
 
 # === TEST RESOURCES (Temporary) ===
   - nombre: "eve-test-lxc"
-    estado: "presente"
+    estado: "ausente"
     tipo: "lxc"
     os: "alpine"
     efimero: true
