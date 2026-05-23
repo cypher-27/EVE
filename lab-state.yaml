@@ -64,7 +64,7 @@ entornos:
         protocolo: "tcp"
         descripcion: "VictoriaMetrics Ingest"
 
-  # === LABORATORIOS DINÁMICOS (Lo que tú o la IA crean) ===
+# === LABORATORIOS DINÁMICOS (Lo que tú o la IA crean) ===
   - nombre: "eve-test-01"
     estado: "ausente"
     tipo: "vm"
@@ -109,7 +109,7 @@ entornos:
 
 # === LABORATORIO DE FORENSE (Viper Nest) ===
   - nombre: "eve-viper"
-    estado: "presente"
+    estado: "ausente"
     tipo: "vm"
     core: false
     efimero: true        # Directo al HDD para que el Janitor lo limpie
@@ -128,3 +128,37 @@ entornos:
       - puerto: 22
         protocolo: "tcp"
         descripcion: "SSH Admin"
+
+# === TEST RESOURCES (Temporary) ===
+  - nombre: "eve-test-lxc"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    efimero: true
+    monitor_enabled: false
+    nodo_proxmox: "makima"
+    vmid: 101
+    recursos:
+      cores: 1
+      memoria: 256
+      disco: 4
+    red:
+      ip: "192.168.1.44/24"
+      gateway: "192.168.1.30"
+
+  - nombre: "eve-test-vm"
+    estado: "presente"
+    tipo: "vm"
+    plantilla: "debian13-template"
+    efimero: false
+    monitor_enabled: true
+    nodo_proxmox: "reze"
+    vmid: 102
+    recursos:
+      cores: 1
+      memoria: 512
+      disco: 8
+    red:
+      ip: "192.168.1.45/24"
+      gateway: "192.168.1.30"
+
