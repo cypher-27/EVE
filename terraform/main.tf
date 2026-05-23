@@ -49,7 +49,7 @@ resource "proxmox_vm_qemu" "entorno_vm" {
   full_clone  = true
   agent       = 1
 
-  boot   = "order=scsi0"
+  # NO boot = "order=scsi0" aquí — scsi0 no existe al momento de aplicar la config
 
   cpu {
     cores   = each.value.recursos.cores
@@ -59,9 +59,6 @@ resource "proxmox_vm_qemu" "entorno_vm" {
 
   memory = each.value.recursos.memoria
   scsihw = "virtio-scsi-single"
-
-  # SIN bloque disks — el clone hereda el disco de la plantilla (disk-0)
-  # Terraform no toca los discos, Proxmox los maneja al clonar
 
   network {
     id     = 0
@@ -82,6 +79,8 @@ EOF
       clone,
       full_clone,
       disk,
+      boot,       # Proxmox lo define al clonar, no Terraform
+      bootdisk,   # ídem
     ]
   }
 }
