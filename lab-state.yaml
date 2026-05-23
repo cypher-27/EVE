@@ -145,6 +145,10 @@ entornos:
     red:
       ip: "192.168.1.44/24"
       gateway: "192.168.1.30"
+    firewall_externo:
+      - puerto: 22
+        protocolo: "tcp"
+        descripcion: "SSH Admin"
 
   - nombre: "eve-test-vm"
     estado: "presente"
@@ -161,4 +165,7 @@ entornos:
     red:
       ip: "192.168.1.45/24"
       gateway: "192.168.1.30"
-
+    firewall_externo:
+      - puerto: 22
+        protocolo: "tcp"
+        descripcion: "SSH Admin"
