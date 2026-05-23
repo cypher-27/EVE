@@ -49,8 +49,6 @@ resource "proxmox_vm_qemu" "entorno_vm" {
   full_clone  = true
   agent       = 1
 
-  # NO boot = "order=scsi0" aquí — scsi0 no existe al momento de aplicar la config
-
   cpu {
     cores   = each.value.recursos.cores
     sockets = 1
@@ -59,6 +57,26 @@ resource "proxmox_vm_qemu" "entorno_vm" {
 
   memory = each.value.recursos.memoria
   scsihw = "virtio-scsi-single"
+
+  disks {
+    ide {
+      ide2 {
+        cloudinit {
+          storage = "local-zfs"
+        }
+      }
+    }
+    scsi {
+      scsi0 {
+        disk {
+          size      = "${each.value.recursos.disco}G"
+          storage   = local.storage_map[each.value.nodo_proxmox][var.eve_env]
+          iothread  = true
+          replicate = false
+        }
+      }
+    }
+  }
 
   network {
     id     = 0
@@ -78,9 +96,6 @@ EOF
     ignore_changes = [
       clone,
       full_clone,
-      disk,
-      boot,       # Proxmox lo define al clonar, no Terraform
-      bootdisk,   # ídem
     ]
   }
 }
