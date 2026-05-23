@@ -18,6 +18,14 @@ LIMITS = {
     "nodes": {
         "makima": { "local-zfs": 100, "hdd_data": 850 },  # local-zfs=SSD, hdd_data=HDD
         "reze":   { "local-zfs": 850, "hdd_data": 0   },  # local-zfs=HDD, hdd_data=DOES NOT EXIST
+    },
+    "templates": {
+        "debian13-template": 11,
+    },
+    "lxc_templates": {
+        # os_key → { "tarball": nombre del archivo, "disco_minimo": GB }
+        "alpine":  { "tarball": "alpine-eve-custom.tar.zst",                    "disco_minimo": 2 },
+        "debian":  { "tarball": "debian-12-standard_12.12-1_amd64.tar.zst",     "disco_minimo": 4 },
     }
 }
 
@@ -132,6 +140,28 @@ def validate() -> None:
             total_cores += cores
             if is_ephemeral:
                 ephemeral_ram += ram
+
+            # VM: template size check
+            if kind == "vm":
+                plantilla = env.get("plantilla")
+                min_disk  = LIMITS["templates"].get(plantilla)
+                if min_disk is None:
+                    fail(f"VM '{name}' uses unknown template '{plantilla}'. "
+                         f"Register it in LIMITS['templates'] in validator.py")
+                if disk_root < min_disk:
+                    fail(f"VM '{name}': disco={disk_root}G is smaller than "
+                         f"template '{plantilla}' minimum ({min_disk}G). "
+                         f"Proxmox cannot shrink a disk on clone.")
+
+            # LXC: ostemplate registration check + disco mínimo
+            if kind == "lxc":
+                lxc_tpl = LIMITS["lxc_templates"].get(os_distro)
+                if lxc_tpl is None:
+                    fail(f"LXC '{name}' uses unregistered OS '{os_distro}'. "
+                         f"Register it in LIMITS['lxc_templates'] in validator.py")
+                if disk_root < lxc_tpl["disco_minimo"]:
+                    fail(f"LXC '{name}': disco={disk_root}G is below minimum "
+                         f"for '{os_distro}' ({lxc_tpl['disco_minimo']}G).")
 
             # Ephemeral resources on makima go to hdd_data; otherwise local-zfs
             assigned_pool = "hdd_data" if (is_ephemeral and node == "makima") else "local-zfs"
