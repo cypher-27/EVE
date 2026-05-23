@@ -130,16 +130,15 @@ EVE/
 ├── orchestrator.sh
 ├── bootstrap.sh
 ├── terraform/
-│ ├── main.tf
-│ ├── variables.tf
-│ └── modules/
-│ ├── vm/
-│ └── lxc/
+│   ├── main.tf
+│   ├── variables.tf
+│   └── modules/
+│       ├── vm/
+│       └── lxc/
 └── ansible/
-├── inventory/
-├── playbooks/
-└── roles/
-
+    ├── inventory/
+    ├── playbooks/
+    └── roles/
 
 ## Supported Systems
 
