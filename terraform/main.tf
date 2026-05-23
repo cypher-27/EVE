@@ -67,7 +67,7 @@ resource "proxmox_vm_qemu" "entorno_vm" {
     storage  = local.storage_map[each.value.nodo_proxmox][var.eve_env]
     size     = "${each.value.recursos.disco}G"
     iothread = true
-    discard  = "on"
+    discard  = true
     format   = "raw"
   }
 
