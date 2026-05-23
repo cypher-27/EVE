@@ -1,272 +1,151 @@
-# EVE - Entorno Virtual de Infraestructura
+# EVE — Environment Virtualization Engine
 
-EVE es un orquestador de infraestructura automatizado que gestiona el despliegue de VMs y contenedores LXC en Proxmox, con configuración mediante Ansible y monitoreo integrado.
+A declarative homelab automation pipeline that provisions and manages virtual machines and LXC containers on a Proxmox cluster, driven entirely by a single source-of-truth YAML manifest.
 
-## Arquitectura General
+## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        lab-state.yaml                           │
-│                   (Single Source of Truth)                      │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      orchestrator.sh                            │
-│                    (Orquestador Principal)                      │
-└─────────────────────────────────────────────────────────────────┘
-         │              │              │              │
-         ▼              ▼              ▼              ▼
-   ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐
-   │validator │  │ Terraform│  │  Ansible │  │   Telegram   │
-   │   .py    │  │          │  │          │  │  Notificaciones│
-   └──────────┘  └──────────┘  └──────────┘  └──────────────┘
-         │              │              │
-         │              ▼              ▼
-         │      ┌──────────────┐ ┌─────────────────┐
-         │      │  Proxmox     │ │ node-config     │
-         │      │  makima/reze │ │ monitor         │
-         │      └──────────────┘ │ sdn-gateway     │
-         │                       └─────────────────┘
-         ▼
-   Validacion de
-     recursos
-```
+lab-state.yaml ← Single source of truth
+│
+▼
+validator.py ← Enforces topology & resource quotas before any action
+│
+▼
+orchestrator.sh ← Reads YAML, decides what to create/destroy/skip
+│
+├── terraform/ ← VM & LXC provisioning via Proxmox provider
+└── ansible/ ← Post-provision config, secrets injection, monitoring
 
-## Componentes Principales
 
-### 1. Orquestador (`orchestrator.sh`)
+## Physical Topology
 
-El cerebro del sistema que coordina todo el flujo de despliegue:
+| Node | Role | local-zfs | hdd_data |
+|------|------|-----------|----------|
+| `makima` | Primary | 100GB SSD | 850GB HDD |
+| `reze` | Secondary | 850GB HDD | — |
 
-- Ejecuta validaciones previas con `validator.py`
-- Despliega reglas de firewall dinámicas
-- Crea infraestructura con Terraform
-- Aplica configuración con Ansible
-- Envía notificaciones a Telegram
+**Cluster limits:** 11 vCPUs · 8192MB RAM total · 2048MB RAM cap for ephemeral resources.
 
-### 2. Validador (`validator.py`)
+## lab-state.yaml Structure
 
-Garantiza que los recursos solicitados cumplan las políticas del cluster:
-
-| Recurso | Límite |
-|---------|--------|
-| Cores totales | 11 |
-| Memoria máxima | 8 GB |
-| Sistemas soportados | Debian, Alpine |
-
-### 3. Terraform (`terraform/`)
-
-Gestión de infraestructura como código:
-
-- Backend S3 con DynamoDB para estado remoto
-- Soporte para VMs KVM y contenedores LXC
-- Integración con cloud-init para configuración inicial
-- Multi-nodo: makima y reze
-
-### 4. Ansible (`ansible/`)
-
-Automatización de configuración post-despliegue:
-
-| Rol | Descripción |
-|-----|-------------|
-| `node-config` | Configuración base del sistema |
-| `monitor` | Stack VictoriaMetrics + Grafana |
-| `sdn-gateway` | Reglas de firewall dinámicas |
-
-### 5. Stack de Monitoreo
-
-- **VictoriaMetrics**: Base de datos de series temporales
-- **Grafana**: Visualización y dashboards
-- **Node Exporter**: Métricas de sistema
-
-## Flujo de Despliegue de una Nueva Máquina
-
-### Paso 1: Definir el entorno en `lab-state.yaml`
+Each entry under `entornos` describes one resource:
 
 ```yaml
 entornos:
-  - nombre: "mi-nueva-vm"
-    estado: "presente"
-    tipo: "vm"                    # "vm" o "lxc"
-    nodo_proxmox: "makima"        # "makima" o "reze"
-    vmid: 150
-    plantilla: "debian13-template"
-    red:
-      ip: "192.168.1.60/24"
-      gateway: "192.168.1.30"
+  - nombre: my-service
+    vmid: 110
+    tipo: lxc                   # vm | lxc
+    os: debian                  # debian | alpine
+    estado: presente            # presente | ausente
+    nodo_proxmox: makima        # makima | reze
+    core: false                 # true = exempt from IP range enforcement
+    efimero: false              # true = counts against ephemeral RAM quota
+    plantilla: debian-12-std    # required for VMs
+    monitor_enabled: true
+
     recursos:
       cores: 2
-      memoria: 2048
-      disco: 20
+      memoria: 512              # MB
+      disco: 8                  # GB
+      disco_datos:
+        storage: hdd_data
+        size: 50G
+
+    red:
+      ip: 192.168.1.45/24
+      gateway: 192.168.1.1
+
     firewall_externo:
-      - puerto: 22
-        protocolo: "tcp"
-        descripcion: "SSH"
+      - puerto: 443
+        protocolo: tcp
 ```
 
-### Paso 2: Ejecutar el orquestador
+### Storage Assignment Logic
+
+- **Persistent resources** → `local-zfs` on the assigned node
+- **Ephemeral resources on `makima`** → `hdd_data` (HDD offload)
+- **Ephemeral resources on `reze`** → `local-zfs` (no HDD available)
+
+### Reserved IPs
+
+| Range | Purpose |
+|-------|---------|
+| `192.168.1.40` | `eve-monitor` — static, mandatory |
+| `192.168.1.41–.63` | General lab resources |
+| Outside range | `core: true` nodes only |
+
+## Quick Start
+
+### 1. Install dependencies
+
+```bash
+chmod +x bootstrap.sh && ./bootstrap.sh
+```
+
+Installs: Terraform, Ansible, SOPS, ZeroTier, Age, python3-yaml.
+
+### 2. Configure secrets
+
+```bash
+sops --encrypt --age <your-age-public-key> secrets.yaml > secrets.enc.yaml
+sops secrets.enc.yaml   # edit in-place
+```
+
+### 3. Validate topology
+
+```bash
+python3 validator.py
+```
+
+Exits `0` on success, `1` on any violation. Runs before Terraform touches the cluster.
+
+**Enforces:** no duplicate names/VMIDs/IPs · RAM/CPU/disk quotas · ephemeral RAM cap ·
+`eve-monitor` presence when required · valid storage pools per node · IP range compliance ·
+valid OS, protocols, and ports.
+
+### 4. Deploy
 
 ```bash
 ./orchestrator.sh
 ```
 
-### Paso 3: El orquestador ejecuta automáticamente
+Diffs `lab-state.yaml` against Proxmox state and applies only the delta.
 
-1. **Validación**: `validator.py` verifica recursos disponibles
-2. **Firewall**: Genera y aplica reglas iptables en doom-gateway
-3. **Infraestructura**: Terraform crea la VM/LXC en Proxmox
-4. **Espera SSH**: Verifica conectividad de la nueva máquina
-5. **Configuración**: Ansible aplica:
-   - Actualización de sistema
-   - Paquetes base (curl, git, vim, htop)
-   - QEMU Guest Agent (solo VMs)
-   - Node Exporter para monitoreo
-6. **Notificación**: Telegram confirma el despliegue exitoso
+## Project Layout
 
-## Estructura del Repositorio
-
-```
 EVE/
-├── orchestrator.sh           # Orquestador principal
-├── validator.py              # Validador de recursos
-├── lab-state.yaml            # Single Source of Truth
-├── bootstrap.sh              # Inicialización del entorno
-│
-├── terraform/                # Infraestructura como Código
-│   ├── main.tf              # Definición de recursos
-│   ├── provider.tf          # Proveedor Proxmox
-│   └── backend.tf           # Backend S3/DynamoDB
-│
-├── ansible/                  # Automatización de configuración
-│   ├── node-config/         # Configuración base
-│   │   └── setup_base.yml
-│   ├── monitor/             # Stack de monitoreo
-│   │   ├── setup_monitor.yml
-│   │   ├── templates/
-│   │   └── files/
-│   └── sdn-gateway/         # Firewall SDN
-│       ├── deploy-firewall.yml
-│       └── templates/
-│
-└── .github/workflows/        # CI/CD
-    └── eve-sanity-check.yml
-```
+├── lab-state.yaml
+├── validator.py
+├── orchestrator.sh
+├── bootstrap.sh
+├── terraform/
+│ ├── main.tf
+│ ├── variables.tf
+│ └── modules/
+│ ├── vm/
+│ └── lxc/
+└── ansible/
+├── inventory/
+├── playbooks/
+└── roles/
 
-## Requisitos
 
-### En el runner/local
+## Supported Systems
 
-- Terraform >= 1.0
-- Ansible >= 2.9
-- SOPS (para descifrar secretos)
-- Age (clave de cifrado)
-- Python 3.x
+| Distribution | vm | lxc |
+|--------------|----|-----|
+| Debian 12    | ✓  | ✓   |
+| Alpine 3.x   | ✓  | ✓   |
 
-### En Proxmox
+## Requirements
 
-- Plantillas cloud-init configuradas
-- Token de API con permisos adecuados
-- Storage configurado (local-lvm, hdd_data)
+- Proxmox VE 8+
+- Terraform ≥ 1.6
+- Ansible ≥ 2.15
+- SOPS ≥ 3.8 + Age
+- Python ≥ 3.10 with `pyyaml`
+- ZeroTier (out-of-band access)
 
-## Configuración de Secretos
+## License
 
-Los secretos se gestionan con SOPS y Age:
+MIT
 
-```bash
-# Descifrar secretos
-sops -d secrets.enc.yaml > secrets.yaml
-
-# Editar secretos cifrados
-sops secrets.enc.yaml
-```
-
-## Variables de Entorno Requeridas
-
-| Variable | Descripción |
-|----------|-------------|
-| `PROXMOX_VE_URL` | URL de la API de Proxmox |
-| `PROXMOX_VE_API_TOKEN` | Token de autenticación |
-| `PROXMOX_VE_USERNAME` | Usuario (alternativo al token) |
-| `PROXMOX_VE_PASSWORD` | Contraseña (alternativo al token) |
-| `TF_VAR_sops_age_key` | Clave Age para SOPS |
-| `TELEGRAM_BOT_TOKEN` | Token del bot de Telegram |
-| `TELEGRAM_CHAT_ID` | ID del chat de notificaciones |
-
-## Tipos de Recursos Soportados
-
-### VM (Máquina Virtual)
-
-```yaml
-- nombre: "mi-vm"
-  tipo: "vm"
-  nodo_proxmox: "makima"
-  vmid: 100
-  plantilla: "debian13-template"
-  recursos:
-    cores: 2
-    memoria: 2048
-    disco: 20
-```
-
-### LXC (Contenedor)
-
-```yaml
-- nombre: "mi-lxc"
-  tipo: "lxc"
-  os: "alpine"              # "alpine" o "debian"
-  nodo_proxmox: "reze"
-  vmid: 200
-  recursos:
-    cores: 1
-    memoria: 512
-    disco: 8
-    disco_datos:            # Opcional
-      storage: "hdd_data"
-      size: "50G"
-```
-
-### Gateway (Firewall)
-
-```yaml
-- nombre: "doom-gateway"
-  tipo: "gateway"
-  red:
-    ip: "192.168.1.30/24"
-```
-
-## Monitoreo
-
-Una vez desplegado, el stack de monitoreo está disponible en:
-
-- **Grafana**: `http://192.168.1.40:3000`
-- **VictoriaMetrics**: `http://192.168.1.40:8428`
-
-Todos los nodos tienen Node Exporter instalado y son scrapeados automáticamente.
-
-## CI/CD
-
-El workflow de GitHub Actions ejecuta validaciones en cada push:
-
-- Verifica herramientas (Terraform, Ansible, SOPS)
-- Valida clave de Age
-- Verifica conectividad ZeroTier
-
-## Troubleshooting
-
-### El validador rechaza el despliegue
-
-Verifica que los recursos solicitados no excedan los límites del cluster (11 cores, 8GB RAM).
-
-### Terraform falla al conectar con Proxmox
-
-Revisa que las variables `PROXMOX_VE_*` estén configuradas correctamente.
-
-### Ansible no puede conectar por SSH
-
-- Verifica que la VM/LXC haya terminado de arrancar
-- Comprueba que cloud-init haya inyectado las SSH keys
-
-### Los secretos no se descifran
-
-Asegúrate de que `SOPS_AGE_KEY_FILE` apunta a la clave correcta.
