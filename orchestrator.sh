@@ -104,7 +104,7 @@ wait_for_ssh() {
     until nc -z -w5 "$ip" 22 2>/dev/null; do
         echo -n "."
         sleep 5
-        (( count++ ))
+        count=$(( count + 1 ))
         if [ "$count" -ge 150 ]; then
             echo -e "\n${RED}[!] Timeout: $ip did not respond after 5 minutes${NC}"
             ping -c 1 "$ip" 2>/dev/null \
