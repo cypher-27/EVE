@@ -1,4 +1,4 @@
-kname: EVE - Janitor
+name: EVE - Janitor
 
 on:
   schedule:
