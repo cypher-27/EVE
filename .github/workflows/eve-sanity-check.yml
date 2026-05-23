@@ -20,11 +20,11 @@ jobs:
       - name: Verify toolchain
         run: |
           echo "[+] Host: $(hostname) | User: $(whoami)"
-          terraform version   || exit 1
-          ansible --version   || exit 1
+          terraform version        || exit 1
+          ansible --version        || exit 1
           ansible-playbook --version || exit 1
-          sops --version      || exit 1
-          python3 --version   || exit 1
+          sops --version           || exit 1
+          python3 --version        || exit 1
 
       - name: Verify Age identity
         run: |
@@ -49,5 +49,21 @@ jobs:
           chmod +x orchestrator.sh
           ./orchestrator.sh --stage-validate
         env:
-          TF_VAR_eve_env: dev
+          TF_VAR_eve_env: "main"
+
+      - name: Notify failure
+        if: failure()
+        run: |
+          source <(sops -d secrets.enc.yaml | python3 -c "
+          import sys, yaml
+          for k, v in yaml.safe_load(sys.stdin).items():
+              print(f\"export {k.upper()}='{v}'\")")
+          MSG=$(printf '❌ *SANITY CHECK FAILED*\n📌 Branch: %s\n👤 Pushed by: %s\n🔗 %s' \
+            "${{ github.ref_name }}" \
+            "${{ github.actor }}" \
+            "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${MSG}" \
+            -d parse_mode="Markdown" > /dev/null
 
