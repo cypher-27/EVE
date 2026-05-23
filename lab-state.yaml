@@ -66,7 +66,7 @@ entornos:
 
   # === LABORATORIOS DINÁMICOS (Lo que tú o la IA crean) ===
   - nombre: "eve-test-01"
-    estado: "presente"
+    estado: "ausente"
     tipo: "vm"
     core: false
     efimero: true
@@ -86,8 +86,8 @@ entornos:
         protocolo: "tcp"
         descripcion: "SSH Admin"
 
-  - nombre: "lxc-ligero-01"
-    estado: "presente"
+  - nombre: "eve-lxc-01"
+    estado: "ausente"
     tipo: "lxc"
     core: false
     efimero: false
@@ -106,3 +106,25 @@ entornos:
       - puerto: 22
         protocolo: "tcp"
         descripcion: "SSH LXC"
+
+# === LABORATORIO DE FORENSE (Viper Nest) ===
+  - nombre: "eve-viper"
+    estado: "presente"
+    tipo: "vm"
+    core: false
+    efimero: true        # Directo al HDD para que el Janitor lo limpie
+    monitor_enabled: true
+    nodo_proxmox: "reze" # Usamos Reze para dejar libre el SSD de Makima
+    vmid: 500
+    plantilla: "debian13-template"
+    red:
+      ip: "192.168.1.43/24"
+      gateway: "192.168.1.30"
+    recursos:
+      cores: 2           # Falco y Docker necesitan al menos 2
+      memoria: 2048      # 2GB es el "sweet spot" para no sufrir
+      disco: 30          # 30GB en el HDD de Reze es nada
+    firewall_externo:
+      - puerto: 22
+        protocolo: "tcp"
+        descripcion: "SSH Admin"

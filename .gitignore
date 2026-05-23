@@ -16,7 +16,7 @@ auth.tf
 age.key
 
 # EXCEPCIONES: Archivos encriptados que SÍ deben ir al repo
-!secrets.enc.env
+!secrets.enc.yaml
 !.sops.yaml
 
 # --- [ 2. TERRAFORM ] ---
