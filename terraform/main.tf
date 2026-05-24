@@ -97,6 +97,7 @@ EOF
       clone,
       full_clone,
       disk,
+      bootdisk,
     ]
   }
 }
