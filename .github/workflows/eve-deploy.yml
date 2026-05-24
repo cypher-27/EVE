@@ -21,6 +21,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Load secrets
+        run: |
+          sops -d secrets.enc.yaml | python3 -c "
+          import sys, yaml
+          for k, v in yaml.safe_load(sys.stdin).items():
+              print(f'{k.upper()}={v}')" >> $GITHUB_ENV
+
       - name: Stage 1 - Validate
         run: |
           chmod +x orchestrator.sh
@@ -48,13 +55,21 @@ jobs:
       - name: Notify success
         if: success()
         run: |
-          source <(sops -d secrets.enc.yaml | python3 -c "
-          import sys, yaml
-          for k, v in yaml.safe_load(sys.stdin).items():
-              print(f\"export {k.upper()}='{v}'\")")
           MSG=$(printf '✅ *DEPLOY COMPLETE*\n🎯 *Mode:* %s\n👤 *Triggered by:* %s' \
             "${{ github.event.inputs.mode }}" \
             "${{ github.actor }}")
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${MSG}" \
+            -d parse_mode="Markdown" > /dev/null
+
+      - name: Notify failure
+        if: failure()
+        run: |
+          MSG=$(printf '❌ *DEPLOY FAILED*\n🎯 *Mode:* %s\n👤 *Triggered by:* %s\n🔗 %s' \
+            "${{ github.event.inputs.mode }}" \
+            "${{ github.actor }}" \
+            "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=${MSG}" \

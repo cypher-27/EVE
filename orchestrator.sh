@@ -20,12 +20,14 @@ cd "$SCRIPT_DIR"
 ACTION="apply"
 FORCE=false
 STAGE="all"
+TARGET_RESOURCE=""
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --destroy)        ACTION="destroy" ;;
         --plan)           ACTION="plan"    ;;
         --force)          FORCE=true       ;;
+        --destroy-target)  ACTION="destroy-target"; TARGET_RESOURCE="$2"; shift ;;
         --stage-validate) STAGE="validate" ;;
         --stage-firewall) STAGE="firewall" ;;
         --stage-infra)    STAGE="infra"    ;;
@@ -33,7 +35,7 @@ while [[ "$#" -gt 0 ]]; do
         --stage-all)      STAGE="all"      ;;
         *)
             echo -e "${RED}[ERROR] Unknown argument: $1${NC}"
-            echo "Usage: $0 [--destroy --force] [--plan]"
+            echo "Usage: $0 [--destroy --force] [--plan] [--destroy-target <nombre>]"
             echo "       $0 [--stage-validate|--stage-firewall|--stage-infra|--stage-config|--stage-all]"
             exit 1
             ;;
@@ -317,6 +319,46 @@ stage_config() {
 # MAIN
 # ==============================================================================
 
+if [ "$ACTION" = "destroy-target" ]; then
+    [ -z "$TARGET_RESOURCE" ] && { echo -e "${RED}[ERROR] --destroy-target requires a resource name${NC}"; exit 1; }
+
+    CURRENT_STEP="Destroy Target: $TARGET_RESOURCE"
+    load_secrets
+    terraform_init
+
+    # Resolve Terraform address from lab-state.yaml
+    TIPO=$(python3 -c "
+import yaml, sys
+with open('lab-state.yaml') as f:
+    data = yaml.safe_load(f)
+for e in data.get('entornos', []):
+    if e['nombre'] == sys.argv[1]:
+        print(e.get('tipo', 'lxc'))
+        sys.exit(0)
+print('NOT_FOUND'); sys.exit(1)
+" "$TARGET_RESOURCE") || handle_error "Resolve Target" "Resource '$TARGET_RESOURCE' not found in lab-state.yaml"
+
+    if [ "$TIPO" = "vm" ]; then
+        ADDRESS="proxmox_vm_qemu.entorno_vm[\"$TARGET_RESOURCE\"]"
+    else
+        ADDRESS="proxmox_lxc.entorno_lxc[\"$TARGET_RESOURCE\"]"
+    fi
+
+    echo -e "${CYAN}[*] Destroying $TIPO '$TARGET_RESOURCE' → $ADDRESS${NC}"
+    send_telegram "🧹 Destroying \`$TARGET_RESOURCE\` (\`$TIPO\`)..."
+
+    cd "$SCRIPT_DIR/terraform"
+    destroy_out=$(terraform destroy -auto-approve -target="$ADDRESS" 2>&1) || \
+        handle_error "Terraform Destroy Target" "$destroy_out"
+    cd "$SCRIPT_DIR"
+
+    IN_PROGRESS=false
+    clear_state
+    echo -e "${GREEN}✓ '$TARGET_RESOURCE' destroyed${NC}"
+    send_telegram "✅ \`$TARGET_RESOURCE\` destroyed successfully."
+    exit 0
+fi
+
 if [ "$ACTION" = "destroy" ]; then
     CURRENT_STEP="Destroy"
     [ "$FORCE" = false ] && { echo -e "${RED}⚠ Use --force to confirm destruction.${NC}"; exit 1; }
@@ -326,7 +368,6 @@ if [ "$ACTION" = "destroy" ]; then
     terraform_init
     echo -e "${GREEN}[2/3] Terraform Destroy...${NC}"
     cd "$SCRIPT_DIR/terraform" || handle_error "Navigation" "Cannot access terraform/ directory"
-    local destroy_out
     destroy_out=$(terraform destroy -auto-approve 2>&1) || {
         echo "$destroy_out" | grep -q "Error acquiring the state lock" \
             && handle_error "Terraform Lock" "State locked. Release the lock manually." \

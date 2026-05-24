@@ -4,18 +4,6 @@
 locals {
   lab_state = yamldecode(file("../lab-state.yaml"))
 
-  # Mapa de decisión: [Nodo][Entorno] = StoragePool
-  storage_map = {
-    "makima" = {
-      "main" = "local-zfs" # SSD 100GB
-      "dev"  = "hdd_data"  # HDD 850GB
-    }
-    "reze" = {
-      "main" = "local-zfs" # HDD 850GB
-      "dev"  = "local-zfs" # HDD 850GB (Porque no hay hdd_data)
-    }
-  }
-  
   # Filtramos VMs activas
   active_vms = {
     for env in local.lab_state.entornos : env.nombre => env
@@ -64,7 +52,7 @@ resource "proxmox_vm_qemu" "entorno_vm" {
   disk {
     slot     = "scsi0"
     type     = "disk"
-    storage  = local.storage_map[each.value.nodo_proxmox][var.eve_env]
+    storage  = try(each.value.efimero, false) && each.value.nodo_proxmox == "makima" ? "hdd_data" : "local-zfs"
     size     = "${each.value.recursos.disco}G"
     iothread = true
     discard  = true
@@ -128,8 +116,7 @@ resource "proxmox_lxc" "entorno_lxc" {
   
   # Disco Principal (Root)
   rootfs {
-    # Aquí buscamos en el mapa usando el nodo y la variable que manda el orquestador
-    storage = local.storage_map[each.value.nodo_proxmox][var.eve_env]
+    storage = try(each.value.efimero, false) && each.value.nodo_proxmox == "makima" ? "hdd_data" : "local-zfs"
     size    = "${each.value.recursos.disco}G"
   }
 
@@ -141,7 +128,7 @@ resource "proxmox_lxc" "entorno_lxc" {
       slot    = 0
       key     = "mp0"
       storage = each.value.recursos.disco_datos.storage
-      mp      = "/var/lib/victoria-metrics" # Donde VM guarda los datos
+      mp      = each.value.recursos.disco_datos.mp
       size    = each.value.recursos.disco_datos.size
     }
   }

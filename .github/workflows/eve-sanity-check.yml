@@ -17,6 +17,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Load secrets
+        run: |
+          sops -d secrets.enc.yaml | python3 -c "
+          import sys, yaml
+          for k, v in yaml.safe_load(sys.stdin).items():
+              print(f'{k.upper()}={v}')" >> $GITHUB_ENV
+
       - name: Verify toolchain
         run: |
           echo "[+] Host: $(hostname) | User: $(whoami)"
@@ -39,10 +46,24 @@ jobs:
         run: |
           ZT_IFACES=$(ip -br addr show | awk '{print $1}' | grep '^zt' || true)
           if [ -z "$ZT_IFACES" ]; then
-            echo "⚠ Warning: No active ZeroTier interface detected"
+            echo "⚠ WARNING: No active ZeroTier interface detected — cluster may be unreachable"
+            echo "ZT_ONLINE=false" >> $GITHUB_ENV
           else
             echo "✅ ZeroTier interfaces: $ZT_IFACES"
+            echo "ZT_ONLINE=true" >> $GITHUB_ENV
           fi
+
+      - name: Verify cluster reachability
+        run: |
+          if [[ "$ZT_ONLINE" == "false" ]]; then
+            echo "⚠ Skipping cluster ping — ZeroTier is down"
+            exit 0
+          fi
+          if ! ping -c 2 -W 3 10.1.1.1 &>/dev/null; then
+            echo "❌ Cannot reach doom over ZeroTier — check tunnel"
+            exit 1
+          fi
+          echo "✅ doom reachable"
 
       - name: Validate lab-state contract
         run: |
@@ -54,10 +75,6 @@ jobs:
       - name: Notify failure
         if: failure()
         run: |
-          source <(sops -d secrets.enc.yaml | python3 -c "
-          import sys, yaml
-          for k, v in yaml.safe_load(sys.stdin).items():
-              print(f\"export {k.upper()}='{v}'\")")
           MSG=$(printf '❌ *SANITY CHECK FAILED*\n📌 Branch: %s\n👤 Pushed by: %s\n🔗 %s' \
             "${{ github.ref_name }}" \
             "${{ github.actor }}" \

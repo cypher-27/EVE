@@ -3,8 +3,11 @@
 # ==========================================
 
 entornos:
-  # === INFRAESTRUCTURA CORE (Intocables) ===
-  # El orquestador NUNCA debe intentar destruirlos.
+
+  # === INFRAESTRUCTURA CORE ===
+  # Estos recursos son físicos o permanentes.
+  # El validator y el janitor nunca los tocan.
+
   - nombre: "doom-gateway"
     estado: "presente"
     tipo: "gateway"
@@ -21,7 +24,7 @@ entornos:
     firewall_externo:
       - puerto: 8006
         protocolo: "tcp"
-        descripcion: "GUI Makima"
+        descripcion: "Proxmox GUI"
 
   - nombre: "reze-core"
     estado: "presente"
@@ -32,17 +35,19 @@ entornos:
     firewall_externo:
       - puerto: 8006
         protocolo: "tcp"
-        descripcion: "GUI Reze"
+        descripcion: "Proxmox GUI"
 
-  # === SERVICIOS BASE (Opcionales pero Permanentes) ===
-  # Si no quieres Grafana, solo cambia 'estado' a 'ausente'.
+  # === MONITOREO ===
+  # VictoriaMetrics + Grafana. Cambia estado a 'presente' para activarlo.
+
   - nombre: "eve-monitor"
-    estado: "ausente"
+    estado: "presente"
     tipo: "lxc"
     core: true
     os: "alpine"
     nodo_proxmox: "makima"
     vmid: 300
+    monitor_enabled: false
     red:
       ip: "192.168.1.40/24"
       gateway: "192.168.1.30"
@@ -53,20 +58,24 @@ entornos:
       disco_datos:
         storage: "hdd_data"
         size: "50G"
+        mp: "/var/lib/victoria-metrics"
     firewall_externo:
       - puerto: 22
         protocolo: "tcp"
         descripcion: "SSH Admin"
       - puerto: 3000
         protocolo: "tcp"
-        descripcion: "Grafana Web"
+        descripcion: "Grafana"
       - puerto: 8428
         protocolo: "tcp"
-        descripcion: "VictoriaMetrics Ingest"
+        descripcion: "VictoriaMetrics"
 
-# === LABORATORIOS DINÁMICOS (Lo que tú o la IA crean) ===
-  - nombre: "eve-test-01"
-    estado: "ausente"
+  # === TEMPLATES DE REFERENCIA ===
+  # Ejemplos de cómo declarar una VM y un LXC.
+  # Cambia estado a 'presente' y ajusta los valores para desplegar.
+
+  - nombre: "eve-lab-vm"
+    estado: "presente"
     tipo: "vm"
     core: false
     efimero: true
@@ -79,19 +88,19 @@ entornos:
       gateway: "192.168.1.30"
     recursos:
       cores: 2
-      memoria: 2048
+      memoria: 1024
       disco: 20
     firewall_externo:
       - puerto: 22
         protocolo: "tcp"
         descripcion: "SSH Admin"
 
-  - nombre: "eve-lxc-01"
-    estado: "ausente"
+  - nombre: "eve-lab-lxc"
+    estado: "presente"
     tipo: "lxc"
     core: false
-    efimero: false
-    monitor_enabled: false
+    efimero: true
+    monitor_enabled: true
     os: "alpine"
     nodo_proxmox: "reze"
     vmid: 200
@@ -100,72 +109,10 @@ entornos:
       gateway: "192.168.1.30"
     recursos:
       cores: 1
-      memoria: 512
-      disco: 8
-    firewall_externo:
-      - puerto: 22
-        protocolo: "tcp"
-        descripcion: "SSH LXC"
-
-# === LABORATORIO DE FORENSE (Viper Nest) ===
-  - nombre: "eve-viper"
-    estado: "ausente"
-    tipo: "vm"
-    core: false
-    efimero: true        # Directo al HDD para que el Janitor lo limpie
-    monitor_enabled: true
-    nodo_proxmox: "reze" # Usamos Reze para dejar libre el SSD de Makima
-    vmid: 500
-    plantilla: "debian13-template"
-    red:
-      ip: "192.168.1.43/24"
-      gateway: "192.168.1.30"
-    recursos:
-      cores: 2           # Falco y Docker necesitan al menos 2
-      memoria: 2048      # 2GB es el "sweet spot" para no sufrir
-      disco: 30          # 30GB en el HDD de Reze es nada
-    firewall_externo:
-      - puerto: 22
-        protocolo: "tcp"
-        descripcion: "SSH Admin"
-
-# === TEST RESOURCES (Temporary) ===
-  - nombre: "eve-test-lxc"
-    estado: "ausente"
-    tipo: "lxc"
-    os: "alpine"
-    efimero: true
-    monitor_enabled: false
-    nodo_proxmox: "makima"
-    vmid: 101
-    recursos:
-      cores: 1
       memoria: 256
-      disco: 1
-    red:
-      ip: "192.168.1.44/24"
-      gateway: "192.168.1.30"
+      disco: 4
     firewall_externo:
       - puerto: 22
         protocolo: "tcp"
         descripcion: "SSH Admin"
 
-  - nombre: "eve-test-vm"
-    estado: "presente"
-    tipo: "vm"
-    plantilla: "debian13-template"
-    efimero: false
-    monitor_enabled: false
-    nodo_proxmox: "reze"
-    vmid: 102
-    recursos:
-      cores: 1
-      memoria: 512
-      disco: 15
-    red:
-      ip: "192.168.1.45/24"
-      gateway: "192.168.1.30"
-    firewall_externo:
-      - puerto: 22
-        protocolo: "tcp"
-        descripcion: "SSH Admin"

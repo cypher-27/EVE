@@ -73,7 +73,7 @@
         owner: "root"
         group: "grafana"
         mode: "0640"
-      no_log: false  # Mantenlo en 'true' en prod para no ver la clave en el log
+      no_log: true
 
     - name: "4.1 Forzar a Grafana a escuchar en todas las interfaces"
       ansible.builtin.lineinfile:

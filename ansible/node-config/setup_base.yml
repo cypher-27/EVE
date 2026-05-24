@@ -49,17 +49,20 @@
       changed_when: false
       when:
         - "'type_lxc' in group_names"
-      ignore_errors: yes
+      failed_when: false
 
     - name: "Recolectar Facts ahora que Python existe"
       ansible.builtin.setup:
 
   tasks:
-    - name: "2.0 Determinar si el monitoreo está habilitado para este host"
+    - name: "2.0 Determinar si el monitoreo está habilitado"
       set_fact:
-        is_monitored: "{{ item.monitor_enabled | default(false) }}"
-      loop: "{{ lab_state.entornos }}"
-      when: item.red.ip.split('/')[0] == ansible_host
+        is_monitored: >-
+          {{ lab_state.entornos
+             | selectattr('red.ip', 'defined')
+             | selectattr('nombre', 'equalto', inventory_hostname)
+             | map(attribute='monitor_enabled')
+             | first | default(false) }}
 
     - name: "2.1 Test de Conexión (Sin Sudo)"
       ansible.builtin.ping:

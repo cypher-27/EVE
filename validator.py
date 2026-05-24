@@ -129,7 +129,7 @@ def validate() -> None:
             if not recursos:
                 fail(f"'{name}' missing required block: recursos")
             for field in ["cores", "memoria", "disco"]:
-                if not recursos.get(field):
+                if recursos.get(field) is None:
                     fail(f"'{name}' missing recursos.{field}")
 
             ram        = recursos.get("memoria", 0)

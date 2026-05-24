@@ -43,7 +43,8 @@ ansible-galaxy collection install community.general community.sops --force
 echo -e "${BLUE}[4/6] Checking SOPS...${NC}"
 if ! command -v sops &> /dev/null; then
     echo "Installing SOPS..."
-    SOPS_VERSION="v3.8.1"
+    SOPS_VERSION=$(curl -s https://api.github.com/repos/getsops/sops/releases/latest \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
     wget -qO sops https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux.amd64
     sudo mv sops /usr/local/bin/sops
     sudo chmod +x /usr/local/bin/sops

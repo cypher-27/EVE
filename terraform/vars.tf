@@ -1,6 +1,5 @@
 variable "eve_env" {
   type        = string
-  description = "Entorno de despliegue (main o dev)"
-  default     = "dev"
+  description = "Deployment environment — used for S3 state key scoping"
+  default     = "main"
 }
-

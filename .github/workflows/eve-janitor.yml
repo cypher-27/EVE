@@ -27,6 +27,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Load secrets
+        run: |
+          sops -d secrets.enc.yaml | python3 -c "
+          import sys, yaml
+          for k, v in yaml.safe_load(sys.stdin).items():
+              print(f'{k.upper()}={v}')" >> $GITHUB_ENV
+
       - name: Validate confirmation
         if: github.event_name == 'workflow_dispatch'
         run: |
@@ -35,49 +42,39 @@ jobs:
             exit 1
           fi
 
-      - name: Mark resources as absent
+      - name: Resolve targets
         run: |
-          MODE="${{ github.event_name == 'schedule' && 'ephemeral' || github.event.inputs.mode }}"
           python3 - <<EOF
-          import yaml, os
+          import yaml, os, sys
 
           mode = os.environ.get('JANITOR_MODE', 'ephemeral')
 
-          with open('lab-state.yaml', 'r') as f:
+          with open('lab-state.yaml') as f:
               data = yaml.safe_load(f)
 
-          changed = []
+          targets = []
           for env in data.get('entornos', []):
               if env.get('core', False):
-                  continue                          # Never touch core
+                  continue
               if env.get('estado') != 'presente':
-                  continue                          # Already absent
+                  continue
+              if mode == 'ephemeral' and not env.get('efimero', False):
+                  continue
+              targets.append(env['nombre'])
 
-              if mode == 'ephemeral' and env.get('efimero', False):
-                  env['estado'] = 'ausente'
-                  changed.append(env['nombre'])
-              elif mode == 'full-lab':              # All non-core, regardless of efimero
-                  env['estado'] = 'ausente'
-                  changed.append(env['nombre'])
-
-          if not changed:
+          if not targets:
               print("Nothing to clean up.")
-              exit(0)
+              sys.exit(0)
 
-          with open('lab-state.yaml', 'w') as f:
-              yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
-
-          print(f"Marked as absent: {', '.join(changed)}")
+          print(f"Targets resolved: {', '.join(targets)}")
+          with open('janitor-targets.txt', 'w') as f:
+              f.write('\n'.join(targets))
           EOF
         env:
           JANITOR_MODE: ${{ github.event_name == 'schedule' && 'ephemeral' || github.event.inputs.mode }}
 
       - name: Notify start
         run: |
-          source <(sops -d secrets.enc.yaml | python3 -c "
-          import sys, yaml
-          for k, v in yaml.safe_load(sys.stdin).items():
-              print(f\"export {k.upper()}='{v}'\")")
           MODE="${{ github.event_name == 'schedule' && 'ephemeral' || github.event.inputs.mode }}"
           MSG=$(printf '🧹 *JANITOR* [%s]\nScope: *%s*\n👤 Triggered by: %s' \
             "${{ github.event_name }}" "$MODE" "${{ github.actor }}")
@@ -86,24 +83,29 @@ jobs:
             --data-urlencode "text=${MSG}" \
             -d parse_mode="Markdown" > /dev/null
 
-      - name: Apply absent state
+      - name: Destroy targets
         run: |
+          if [ ! -f janitor-targets.txt ]; then
+            echo "No targets to destroy, exiting cleanly."
+            exit 0
+          fi
+
           chmod +x orchestrator.sh
-          ./orchestrator.sh --stage-infra
+
+          while IFS= read -r target; do
+            echo "[*] Destroying: $target"
+            ./orchestrator.sh --destroy-target "$target"
+          done < janitor-targets.txt
         env:
           TF_VAR_eve_env: "main"
 
       - name: Notify result
         if: always()
         run: |
-          source <(sops -d secrets.enc.yaml | python3 -c "
-          import sys, yaml
-          for k, v in yaml.safe_load(sys.stdin).items():
-              print(f\"export {k.upper()}='{v}'\")")
           if [[ "${{ job.status }}" == "success" ]]; then
             MSG="✅ *JANITOR*: Cleanup complete"
           else
-            MSG="❌ *JANITOR*: Cleanup failed"
+            MSG="❌ *JANITOR*: Cleanup failed — check logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           fi
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
