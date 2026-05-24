@@ -43,7 +43,7 @@ entornos:
   - nombre: "eve-monitor"
     estado: "presente"
     tipo: "lxc"
-    core: true
+    core: false
     os: "alpine"
     nodo_proxmox: "makima"
     vmid: 300
