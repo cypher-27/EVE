@@ -86,6 +86,7 @@ EOF
       full_clone,
       disk,
       bootdisk,
+      startup_shutdown,
     ]
   }
 }
