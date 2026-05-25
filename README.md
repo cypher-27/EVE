@@ -387,5 +387,5 @@ export SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt"
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT
 

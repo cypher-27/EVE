@@ -6,7 +6,7 @@ on:
       mode:
         description: 'Deployment mode'
         required: true
-        default: 'apply'
+        default: 'plan'
         type: choice
         options:
           - plan
