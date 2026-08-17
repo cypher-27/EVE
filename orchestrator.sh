@@ -72,6 +72,12 @@ for k, v in yaml.safe_load(sys.stdin).items():
 
 send_telegram() {
     local message="$1"
+    # Callers that already own their own notification flow (e.g. the janitor
+    # workflow) can set QUIET_NOTIFY=true to suppress orchestrator-level
+    # messages and avoid duplicate/conflicting Telegram notifications.
+    if [ "${QUIET_NOTIFY:-false}" = "true" ]; then
+        return 0
+    fi
     if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
         curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \

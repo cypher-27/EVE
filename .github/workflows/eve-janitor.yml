@@ -1,5 +1,4 @@
 name: EVE - Janitor
-
 on:
   schedule:
     - cron: '0 0 * * *'   # Daily — ephemeral only
@@ -17,23 +16,19 @@ on:
         description: 'Type "DESTROY" to confirm'
         required: true
         default: ''
-
 jobs:
   cleanup:
     name: Infrastructure Cleanup
     runs-on: eve
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Load secrets
         run: |
           sops -d secrets.enc.yaml | python3 -c "
           import sys, yaml
           for k, v in yaml.safe_load(sys.stdin).items():
               print(f'{k.upper()}={v}')" >> $GITHUB_ENV
-
       - name: Validate confirmation
         if: github.event_name == 'workflow_dispatch'
         run: |
@@ -41,17 +36,13 @@ jobs:
             echo "❌ Invalid confirmation. Type 'DESTROY' to proceed."
             exit 1
           fi
-
       - name: Resolve targets
         run: |
           python3 - <<EOF
           import yaml, os, sys
-
           mode = os.environ.get('JANITOR_MODE', 'ephemeral')
-
           with open('lab-state.yaml') as f:
               data = yaml.safe_load(f)
-
           targets = []
           for env in data.get('entornos', []):
               if env.get('core', False):
@@ -61,18 +52,15 @@ jobs:
               if mode == 'ephemeral' and not env.get('efimero', False):
                   continue
               targets.append(env['nombre'])
-
           if not targets:
               print("Nothing to clean up.")
               sys.exit(0)
-
           print(f"Targets resolved: {', '.join(targets)}")
           with open('janitor-targets.txt', 'w') as f:
               f.write('\n'.join(targets))
           EOF
         env:
           JANITOR_MODE: ${{ github.event_name == 'schedule' && 'ephemeral' || github.event.inputs.mode }}
-
       - name: Notify start
         run: |
           MODE="${{ github.event_name == 'schedule' && 'ephemeral' || github.event.inputs.mode }}"
@@ -83,27 +71,80 @@ jobs:
             --data-urlencode "text=${MSG}" \
             -d parse_mode="Markdown" > /dev/null
 
+      # ── Capa 2: Pre-flight VPN check ──────────────────────────────
+      - name: Pre-flight VPN check
+        run: |
+          PROXMOX_ZT_IP="10.1.1.1"
+          MAX_RETRIES=4
+          for i in $(seq 1 $MAX_RETRIES); do
+            if ping -c 2 -W 3 "$PROXMOX_ZT_IP" > /dev/null 2>&1; then
+              echo "✅ ZeroTier link to Proxmox is up (attempt $i)."
+              exit 0
+            fi
+            echo "[!] Attempt $i/$MAX_RETRIES: no response from $PROXMOX_ZT_IP, retrying in 15s..."
+            sleep 15
+          done
+          echo "⚠️ ZeroTier link still down after $MAX_RETRIES attempts. Proceeding anyway — post-mortem will catch it if it fails."
+          exit 0
+
+      # ── Capa 3: Destroy con clasificacion de error ────────────────
       - name: Destroy targets
+        id: destroy
         run: |
           if [ ! -f janitor-targets.txt ]; then
             echo "No targets to destroy, exiting cleanly."
             exit 0
           fi
-
           chmod +x orchestrator.sh
-
           while IFS= read -r target; do
             echo "[*] Destroying: $target"
-            ./orchestrator.sh --destroy-target "$target"
+            OUTPUT=$(./orchestrator.sh --destroy-target "$target" 2>&1)
+            EXIT_CODE=$?
+            echo "$OUTPUT"
+            if [ $EXIT_CODE -ne 0 ]; then
+              if echo "$OUTPUT" | grep -qE "no route to host|dial tcp.*connect:|i/o timeout|connection refused"; then
+                echo "[!] Connectivity-related failure detected for $target"
+                echo "connectivity_failure=true" >> $GITHUB_ENV
+              else
+                echo "connectivity_failure=false" >> $GITHUB_ENV
+              fi
+              echo "failed_target=$target" >> $GITHUB_ENV
+              exit $EXIT_CODE
+            fi
           done < janitor-targets.txt
         env:
           TF_VAR_eve_env: "main"
+          QUIET_NOTIFY: "true"   # workflow is the single source of truth for janitor notifications
+
+      # ── Capa 3: Remediacion si fue fallo de conectividad ──────────
+      - name: Attempt VPN remediation
+        if: failure() && env.connectivity_failure == 'true'
+        run: |
+          PROXMOX_ZT_IP="10.1.1.1"
+          for i in $(seq 1 6); do
+            if ping -c 2 -W 3 "$PROXMOX_ZT_IP" > /dev/null 2>&1; then
+              echo "vpn_restored=true" >> $GITHUB_ENV
+              echo "✅ VPN restored after remediation attempt."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "vpn_restored=false" >> $GITHUB_ENV
+          echo "❌ VPN still down after remediation attempts."
 
       - name: Notify result
         if: always()
         run: |
           if [[ "${{ job.status }}" == "success" ]]; then
             MSG="✅ *JANITOR*: Cleanup complete"
+          elif [[ "${{ env.connectivity_failure }}" == "true" ]]; then
+            if [[ "${{ env.vpn_restored }}" == "true" ]]; then
+              MSG=$(printf '⚠️ *JANITOR*: Fallo por VPN caída en `%s` (no route to host).\n🔧 ZeroTier restaurado automáticamente — puedes relanzar el workflow manualmente.\n%s/%s/actions/runs/%s' \
+                "${{ env.failed_target }}" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
+            else
+              MSG=$(printf '❌ *JANITOR*: Fallo por VPN caída en `%s` y la remediación automática NO funcionó. Revisa manualmente.\n%s/%s/actions/runs/%s' \
+                "${{ env.failed_target }}" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
+            fi
           else
             MSG="❌ *JANITOR*: Cleanup failed — check logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           fi
