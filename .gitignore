@@ -48,3 +48,4 @@ core
 dist/
 build/
 
+*.orig
