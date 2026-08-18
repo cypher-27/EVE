@@ -1,14 +1,14 @@
 # ==========================================
 # EVE - SINGLE SOURCE OF TRUTH (v2.0)
-# STRESS TEST BUILD v1.4
-# Fix aplicado: storage 'hdd_data' no existe en nodo 'reze'
-# -> stress-vm-db y stress-lxc-fileserver movidos a storage 'local-lvm'
-#    (storage local default de Proxmox, se asume presente en todo nodo)
+# STRESS TEST BUILD v1.5
+# Fix aplicado: formato de tamaño invalido '2T' en disco_datos
+# -> stress-lxc-fileserver cambiado a '2000G' (equivalente en GB)
 # Catches confirmados hasta ahora:
 #   v1.0 -> rango de IP fuera de .41-.63 (detectado)
 #   v1.1 -> IP duplicada dentro del rango (detectado)
 #   v1.2 -> VMID duplicado (detectado)
 #   v1.3 -> storage pool no existe en el nodo destino (detectado)
+#   v1.4 -> formato de tamano '2T' invalido, solo admite sufijo G (detectado)
 # Casos trampa aun pendientes de disparar, sin tocar:
 #   - firewall_externo ausente en recursos "presente" (stress-vm-web01,
 #     stress-vm-db, stress-lxc-redis, stress-orphan-novalue)
@@ -209,7 +209,7 @@ entornos:
       memoria: 8192
       disco: 40
       disco_datos:
-        storage: "local-lvm"   # FIX v1.4: hdd_data no existe en 'reze'
+        storage: "local-lvm"
         size: "200G"
         mp: "/var/lib/postgresql"
     # sin firewall_externo intencional -> catch pendiente (DB cerrada)
@@ -322,8 +322,8 @@ entornos:
       memoria: 16384
       disco: 20
       disco_datos:
-        storage: "local-lvm"   # FIX v1.4: hdd_data no existe en 'reze'
-        size: "2T"
+        storage: "local-lvm"
+        size: "2000G"   # FIX v1.5: '2T' invalido, sufijo debe ser G
         mp: "/srv/samba"
     firewall_externo:
       - puerto: 445
