@@ -2,6 +2,7 @@
 """
 EVE Validator — Enforces cluster topology rules against lab-state.yaml
 """
+
 import sys
 import yaml
 import ipaddress
@@ -33,6 +34,8 @@ IP_MONITOR     = "192.168.1.40"
 IP_RANGE_START = ipaddress.IPv4Address("192.168.1.41")
 IP_RANGE_END   = ipaddress.IPv4Address("192.168.1.63")
 
+VALID_ESTADOS = ("presente", "ausente")
+
 # ==============================================================================
 # Helpers
 # ==============================================================================
@@ -42,11 +45,19 @@ RED    = "\033[0;31m"
 YELLOW = "\033[0;33m"
 NC     = "\033[0m"
 
+ERRORS: list[str] = []
+
 def log(color: str, msg: str) -> None:
     print(f"{color}{msg}{NC}")
 
 def fail(msg: str) -> None:
+    """Record a validation error without stopping the run (aggregated mode)."""
     log(RED, f"[!] VALIDATION ERROR: {msg}")
+    ERRORS.append(msg)
+
+def fatal(msg: str) -> None:
+    """Unrecoverable error — nothing else can run (e.g. contract unreadable)."""
+    log(RED, f"[!] FATAL ERROR: {msg}")
     sys.exit(1)
 
 # ==============================================================================
@@ -58,7 +69,7 @@ def validate() -> None:
         with open("lab-state.yaml") as f:
             data = yaml.safe_load(f)
     except Exception as e:
-        fail(f"Cannot read lab-state.yaml: {e}")
+        fatal(f"Cannot read lab-state.yaml: {e}")
 
     entornos = data.get("entornos", [])
 
@@ -77,19 +88,26 @@ def validate() -> None:
     seen_vmids         = set()
     seen_ips           = set()
 
+    gateway_ips = {
+        e["red"]["ip"].split("/")[0]
+        for e in entornos
+        if e.get("tipo") == "gateway" and e.get("estado") == "presente"
+        and "red" in e and "ip" in e["red"]
+    }
+
     log(YELLOW, "[*] Starting EVE topology validation...")
 
     for env in entornos:
-        name        = env.get("nombre", "unknown")
-        state       = env.get("estado",  "ausente")
-        is_core     = env.get("core",     False)
+        name         = env.get("nombre", "unknown")
+        state        = env.get("estado",  "ausente")
+        is_core      = env.get("core",     False)
         is_ephemeral = env.get("efimero", False)
-        kind        = env.get("tipo",     "vm")
-        os_distro   = env.get("os",       "debian")
-        node        = env.get("nodo_proxmox")
-        vmid        = env.get("vmid")
+        kind         = env.get("tipo",     "vm")
+        os_distro    = env.get("os",       "debian")
+        node         = env.get("nodo_proxmox")
+        vmid         = env.get("vmid")
 
-        # Duplicate checks
+        # Duplicate checks (safe to continue — don't affect downstream math)
         if name in seen_names:
             fail(f"Duplicate name: '{name}'")
         seen_names.add(name)
@@ -102,6 +120,10 @@ def validate() -> None:
         if name == "eve-monitor" and state == "presente":
             monitor_present = True
 
+        if state not in VALID_ESTADOS:
+            fail(f"Invalid estado '{state}' in '{name}'. Must be one of {VALID_ESTADOS}.")
+            continue
+
         if state == "ausente":
             continue
 
@@ -112,25 +134,34 @@ def validate() -> None:
         if kind in ["vm", "lxc"]:
             if kind == "vm" and not env.get("plantilla"):
                 fail(f"VM '{name}' missing required field: plantilla")
+                continue
 
             if kind == "lxc":
                 if vmid is None:
                     fail(f"LXC '{name}' missing required field: vmid")
+                    continue
                 if not env.get("os"):
                     fail(f"LXC '{name}' missing required field: os")
+                    continue
 
             if os_distro not in LIMITS["supported_os"]:
                 fail(f"Unsupported OS: '{os_distro}' in '{name}'")
+                continue
 
             if node not in LIMITS["nodes"]:
                 fail(f"Unknown Proxmox node: '{node}' in '{name}'")
+                continue
 
             recursos = env.get("recursos")
             if not recursos:
                 fail(f"'{name}' missing required block: recursos")
-            for field in ["cores", "memoria", "disco"]:
-                if recursos.get(field) is None:
+                continue
+
+            missing_fields = [f for f in ["cores", "memoria", "disco"] if recursos.get(f) is None]
+            if missing_fields:
+                for field in missing_fields:
                     fail(f"'{name}' missing recursos.{field}")
+                continue
 
             ram        = recursos.get("memoria", 0)
             cores      = recursos.get("cores",   0)
@@ -148,6 +179,7 @@ def validate() -> None:
                 if min_disk is None:
                     fail(f"VM '{name}' uses unknown template '{plantilla}'. "
                          f"Register it in LIMITS['templates'] in validator.py")
+                    continue
                 if disk_root < min_disk:
                     fail(f"VM '{name}': disco={disk_root}G is smaller than "
                          f"template '{plantilla}' minimum ({min_disk}G). "
@@ -159,6 +191,7 @@ def validate() -> None:
                 if lxc_tpl is None:
                     fail(f"LXC '{name}' uses unregistered OS '{os_distro}'. "
                          f"Register it in LIMITS['lxc_templates'] in validator.py")
+                    continue
                 if disk_root < lxc_tpl["disco_minimo"]:
                     fail(f"LXC '{name}': disco={disk_root}G is below minimum "
                          f"for '{os_distro}' ({lxc_tpl['disco_minimo']}G).")
@@ -174,6 +207,7 @@ def validate() -> None:
                     extra_size = int(extra_size_str.replace("G", "").replace("g", ""))
                 except ValueError:
                     fail(f"Invalid size format in disco_datos of '{name}': {extra_size_str}")
+                    extra_size = 0  # degrade gracefully, keep checking the rest of this resource
 
                 if extra_pool == "hdd_data" and node == "reze":
                     fail(f"'{name}' requests 'hdd_data' on node 'reze', but that pool does not exist.")
@@ -202,6 +236,7 @@ def validate() -> None:
                 ip_obj = ipaddress.IPv4Address(ip_str)
             except ValueError:
                 fail(f"Invalid IP in '{name}': {ip_str}")
+                continue
 
             if ip_str in seen_ips:
                 fail(f"Duplicate IP: {ip_str} in '{name}'")
@@ -213,6 +248,10 @@ def validate() -> None:
                     ipaddress.IPv4Address(gateway)
                 except ValueError:
                     fail(f"Invalid gateway in '{name}': {gateway}")
+                else:
+                    if gateway not in gateway_ips:
+                        fail(f"Gateway '{gateway}' in '{name}' does not match any "
+                             f"declared tipo:gateway node ({sorted(gateway_ips)})")
 
             if name == "eve-monitor":
                 if ip_str != IP_MONITOR:
@@ -240,7 +279,15 @@ def validate() -> None:
             if used > limit:
                 fail(f"Storage exceeded on {node}/{pool}: {used}GB requested / {limit}GB available")
 
-    log(GREEN, f"[✓] Validation passed — RAM: {total_ram}/{LIMITS['ram_total_mb']}MB | CPU: {total_cores}/{LIMITS['cpu_total']}")
+    # --- Final report ---
+    if ERRORS:
+        log(RED, f"\n[✗] Validation FAILED with {len(ERRORS)} error(s):")
+        for i, err in enumerate(ERRORS, 1):
+            log(YELLOW, f"  {i}. {err}")
+        sys.exit(1)
+
+    log(GREEN, f"[✓] Validation passed — RAM: {total_ram}/{LIMITS['ram_total_mb']}MB | "
+               f"CPU: {total_cores}/{LIMITS['cpu_total']}")
     sys.exit(0)
 
 
