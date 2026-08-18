@@ -1,13 +1,11 @@
 # ==========================================
 # EVE - SINGLE SOURCE OF TRUTH (v2.0)
-# STRESS TEST BUILD v2.0
-# Fix aplicado: CPU overbooking (30 cores solicitados / 11 disponibles)
-# -> eliminados stress-vm-web02 y stress-vm-api (sus catches de IP y VMID
-#    duplicados ya fueron confirmados en v1.1 y v1.2, no aportaban mas)
-# -> todos los recursos restantes bajados a 1 core c/u
-# -> total ahora: 11 recursos "presente" x 1 core = 11 cores exactos,
-#    al limite justo del cupo reportado. Sirve para probar si el
-#    validator usa comparacion estricta (>) o inclusiva (>=).
+# STRESS TEST BUILD v2.1
+# Fix aplicado: presupuesto de RAM efimera excedido (3712MB / 2048MB)
+# -> memoria de todos los recursos con efimero:true recortada,
+#    total ahora 1920MB (margen de 128MB bajo el tope)
+# Hallazgo: existe un presupuesto de RAM separado solo para recursos
+# efimero:true, distinto del limite total de RAM del cluster (8192MB).
 # Catches confirmados hasta ahora:
 #   v1.0 -> rango de IP fuera de .41-.63
 #   v1.1 -> IP duplicada dentro del rango
@@ -19,6 +17,8 @@
 #   v1.7 -> disco menor al minimo del template (Proxmox no encoge clones)
 #   v1.8 -> RAM overbooking a nivel de suma total de recursos "presente"
 #   v1.9 -> CPU overbooking a nivel de suma total de recursos "presente"
+#   v2.0 -> 11 cores / 11 disponibles PASO -> comparacion es estricta (>)
+#   v2.0 -> RAM efimera excedida (presupuesto separado de 2048MB)
 # Huecos detectados (no bloquean el pipeline, sospecha fuerte):
 #   - gateway inconsistente con la topologia real -> no se valida
 #   - estado fuera de enum presente/ausente ("reiniciando") -> no se valida
@@ -64,7 +64,7 @@ entornos:
         protocolo: "tcp"
         descripcion: "Proxmox GUI"
 
-  # === MONITOREO - GRAFANA ON ===
+  # === MONITOREO - GRAFANA ON (no efimero, no cuenta en el presupuesto) ===
 
   - nombre: "eve-monitor"
     estado: "presente"
@@ -130,8 +130,8 @@ entornos:
       ip: "192.168.1.41/24"
       gateway: "192.168.1.30"
     recursos:
-      cores: 1   # FIX v2.0: recortado (era 2)
-      memoria: 1024
+      cores: 1
+      memoria: 512   # FIX v2.1: recortado (era 1024)
       disco: 20
     firewall_externo:
       - puerto: 22
@@ -152,12 +152,12 @@ entornos:
       ip: "192.168.1.50/24"
       gateway: "192.168.1.30"
     recursos:
-      cores: 1   # FIX v2.0: recortado (era 2)
-      memoria: 512
+      cores: 1
+      memoria: 256   # FIX v2.1: recortado (era 512)
       disco: 20
     # sin firewall_externo intencional -> catch pendiente (web sin puerto 80)
 
-  # === VMs PERSISTENTES ===
+  # === VMs PERSISTENTES (no efimero, no cuentan en el presupuesto) ===
 
   - nombre: "stress-vm-db"
     estado: "presente"
@@ -173,7 +173,7 @@ entornos:
       ip: "192.168.1.52/24"
       gateway: "192.168.1.30"
     recursos:
-      cores: 1   # FIX v2.0: recortado (era 4)
+      cores: 1
       memoria: 1024
       disco: 40
       disco_datos:
@@ -196,8 +196,8 @@ entornos:
       ip: "192.168.1.53/24"
       gateway: "192.168.1.30"
     recursos:
-      cores: 1   # FIX v2.0: recortado (era 2)
-      memoria: 512
+      cores: 1
+      memoria: 256   # FIX v2.1: recortado (era 512)
       disco: 20
       disco_datos:
         storage: "hdd_data"
@@ -224,7 +224,7 @@ entornos:
       gateway: "192.168.1.30"
     recursos:
       cores: 1
-      memoria: 256
+      memoria: 128   # FIX v2.1: recortado (era 256)
       disco: 4
     firewall_externo:
       - puerto: 22
@@ -246,7 +246,7 @@ entornos:
       gateway: "192.168.1.30"
     recursos:
       cores: 1
-      memoria: 512
+      memoria: 256   # FIX v2.1: recortado (era 512)
       disco: 4
     # sin firewall_externo intencional -> caso "control" valido
 
@@ -265,12 +265,14 @@ entornos:
       gateway: "192.168.1.99"   # gateway invalido intencional -> catch pendiente
     recursos:
       cores: 1
-      memoria: 256
+      memoria: 128   # FIX v2.1: recortado (era 256)
       disco: 4
     firewall_externo:
       - puerto: 8025
         protocolo: "tcp"
         descripcion: "MailHog UI"
+
+  # === LXC persistente (no efimero, no cuenta en el presupuesto) ===
 
   - nombre: "stress-lxc-fileserver"
     estado: "presente"
@@ -286,7 +288,7 @@ entornos:
       ip: "192.168.1.56/24"
       gateway: "192.168.1.30"
     recursos:
-      cores: 1   # FIX v2.0: recortado (era 8)
+      cores: 1
       memoria: 512
       disco: 20
       disco_datos:
@@ -333,7 +335,7 @@ entornos:
       gateway: "192.168.1.30"
     recursos:
       cores: 1
-      memoria: 512
+      memoria: 256   # FIX v2.1: recortado (era 512)
       disco: 11
     firewall_externo:
       - puerto: 22
