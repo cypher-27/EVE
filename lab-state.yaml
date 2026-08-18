@@ -1,12 +1,14 @@
 # ==========================================
 # EVE - SINGLE SOURCE OF TRUTH (v2.0)
-# STRESS TEST BUILD v1.3
-# Fix aplicado: VMID duplicado 100 (stress-vm-api / eve-lab-vm)
-# -> stress-vm-api movido a vmid 103 (libre)
+# STRESS TEST BUILD v1.4
+# Fix aplicado: storage 'hdd_data' no existe en nodo 'reze'
+# -> stress-vm-db y stress-lxc-fileserver movidos a storage 'local-lvm'
+#    (storage local default de Proxmox, se asume presente en todo nodo)
 # Catches confirmados hasta ahora:
 #   v1.0 -> rango de IP fuera de .41-.63 (detectado)
 #   v1.1 -> IP duplicada dentro del rango (detectado)
 #   v1.2 -> VMID duplicado (detectado)
+#   v1.3 -> storage pool no existe en el nodo destino (detectado)
 # Casos trampa aun pendientes de disparar, sin tocar:
 #   - firewall_externo ausente en recursos "presente" (stress-vm-web01,
 #     stress-vm-db, stress-lxc-redis, stress-orphan-novalue)
@@ -172,7 +174,7 @@ entornos:
     efimero: true
     monitor_enabled: true
     nodo_proxmox: "makima"
-    vmid: 103   # FIX v1.3: VMID unico, ya no duplicado
+    vmid: 103
     plantilla: "debian13-template"
     servicio: "api-python"
     red:
@@ -207,7 +209,7 @@ entornos:
       memoria: 8192
       disco: 40
       disco_datos:
-        storage: "hdd_data"
+        storage: "local-lvm"   # FIX v1.4: hdd_data no existe en 'reze'
         size: "200G"
         mp: "/var/lib/postgresql"
     # sin firewall_externo intencional -> catch pendiente (DB cerrada)
@@ -320,7 +322,7 @@ entornos:
       memoria: 16384
       disco: 20
       disco_datos:
-        storage: "hdd_data"
+        storage: "local-lvm"   # FIX v1.4: hdd_data no existe en 'reze'
         size: "2T"
         mp: "/srv/samba"
     firewall_externo:
