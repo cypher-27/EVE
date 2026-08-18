@@ -1,30 +1,12 @@
 # ==========================================
 # EVE - SINGLE SOURCE OF TRUTH (v2.0)
-# STRESS TEST BUILD v2.3 - AISLAR CAUSA DEL FALLO EN STAGE: FIREWALL
-#
-# Contexto: v2.2 fallo en [STAGE: FIREWALL] con "Failed at: Ansible SDN"
-# al intentar aplicar reglas en doom-gateway. Hipotesis principal:
-# 'stress-fw-empty' NO declara la clave firewall_externo (esta ausente,
-# no es una lista vacia []), y el rol de Ansible SDN probablemente hace
-# un `for rule in host.firewall_externo` en Jinja2 que revienta con
-# AnsibleUndefinedVariable si la clave no existe.
-#
-# Este build quita 'stress-fw-empty' por completo y deja solo
-# 'stress-fw-full' (que si declara la clave con una regla real).
-# Si el stage de firewall PASA con este build:
-#   -> confirma que el crash es por la clave ausente, no por doom-gateway
-#      en si (conectividad, credenciales, API de Proxmox, etc.)
-#   -> siguiente paso: volver a meter un recurso de control con
-#      firewall_externo: [] (lista vacia explicita) para verificar si
-#      ESE caso si pasa, aislando aun mas: "clave ausente" vs "lista vacia"
-# Si el stage de firewall SIGUE fallando con este build:
-#   -> el problema no es la clave ausente, hay que revisar conectividad/
-#      permisos de Ansible hacia doom-gateway o el modulo SDN en si
 # ==========================================
 
 entornos:
 
-  # === INFRAESTRUCTURA CORE (sin cambios, nunca deben tocarse) ===
+  # === INFRAESTRUCTURA CORE ===
+  # Estos recursos son físicos o permanentes.
+  # El validator y el janitor nunca los tocan.
 
   - nombre: "doom-gateway"
     estado: "presente"
@@ -55,7 +37,8 @@ entornos:
         protocolo: "tcp"
         descripcion: "Proxmox GUI"
 
-  # === MONITOREO (ya desplegado, sin cambios) ===
+  # === MONITOREO ===
+  # VictoriaMetrics + Grafana. Cambia estado a 'presente' para activarlo.
 
   - nombre: "eve-monitor"
     estado: "presente"
@@ -64,7 +47,7 @@ entornos:
     os: "alpine"
     nodo_proxmox: "makima"
     vmid: 300
-    monitor_enabled: true
+    monitor_enabled: false
     red:
       ip: "192.168.1.40/24"
       gateway: "192.168.1.30"
@@ -87,19 +70,42 @@ entornos:
         protocolo: "tcp"
         descripcion: "VictoriaMetrics"
 
-  # === UNICO recurso de prueba: firewall_externo declarado correctamente ===
+  # === TEMPLATES DE REFERENCIA ===
+  # Ejemplos de cómo declarar una VM y un LXC.
+  # Cambia estado a 'presente' y ajusta los valores para desplegar.
 
-  - nombre: "stress-fw-full"
+  - nombre: "eve-lab-vm"
+    estado: "presente"
+    tipo: "vm"
+    core: false
+    efimero: true
+    monitor_enabled: true
+    nodo_proxmox: "makima"
+    vmid: 100
+    plantilla: "debian13-template"
+    red:
+      ip: "192.168.1.41/24"
+      gateway: "192.168.1.30"
+    recursos:
+      cores: 2
+      memoria: 1024
+      disco: 20
+    firewall_externo:
+      - puerto: 22
+        protocolo: "tcp"
+        descripcion: "SSH Admin"
+
+  - nombre: "eve-lab-lxc"
     estado: "presente"
     tipo: "lxc"
     core: false
     efimero: true
-    monitor_enabled: false
+    monitor_enabled: true
     os: "alpine"
     nodo_proxmox: "reze"
-    vmid: 207
+    vmid: 200
     red:
-      ip: "192.168.1.61/24"
+      ip: "192.168.1.42/24"
       gateway: "192.168.1.30"
     recursos:
       cores: 1
@@ -109,3 +115,4 @@ entornos:
       - puerto: 22
         protocolo: "tcp"
         descripcion: "SSH Admin"
+
