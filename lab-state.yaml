@@ -1,12 +1,13 @@
 # ==========================================
 # EVE - SINGLE SOURCE OF TRUTH (v2.0)
-# STRESS TEST BUILD v1.9
-# Fix aplicado: RAM overbooking (40064MB solicitados / 8192MB disponibles)
-# -> memoria recortada en los recursos mas pesados, total ahora ~6784MB
-# Hallazgo importante: el chequeo de RAM excluyo a 'eve-monitor-b' (estado
-# ausente) del total, y el numero '8192MB available' parece ser un solo
-# valor global, no por nodo -> posible bug si makima y reze tienen RAM
-# fisica independiente. Revisar el codigo del validator despues del test.
+# STRESS TEST BUILD v2.0
+# Fix aplicado: CPU overbooking (30 cores solicitados / 11 disponibles)
+# -> eliminados stress-vm-web02 y stress-vm-api (sus catches de IP y VMID
+#    duplicados ya fueron confirmados en v1.1 y v1.2, no aportaban mas)
+# -> todos los recursos restantes bajados a 1 core c/u
+# -> total ahora: 11 recursos "presente" x 1 core = 11 cores exactos,
+#    al limite justo del cupo reportado. Sirve para probar si el
+#    validator usa comparacion estricta (>) o inclusiva (>=).
 # Catches confirmados hasta ahora:
 #   v1.0 -> rango de IP fuera de .41-.63
 #   v1.1 -> IP duplicada dentro del rango
@@ -17,6 +18,7 @@
 #   v1.6 -> disco por debajo del minimo requerido segun el OS
 #   v1.7 -> disco menor al minimo del template (Proxmox no encoge clones)
 #   v1.8 -> RAM overbooking a nivel de suma total de recursos "presente"
+#   v1.9 -> CPU overbooking a nivel de suma total de recursos "presente"
 # Huecos detectados (no bloquean el pipeline, sospecha fuerte):
 #   - gateway inconsistente con la topologia real -> no se valida
 #   - estado fuera de enum presente/ausente ("reiniciando") -> no se valida
@@ -113,7 +115,7 @@ entornos:
       disco: 8
     # sin firewall_externo intencional, recurso "ausente"
 
-  # === VMs EFÍMERAS ===
+  # === VM EFÍMERA ===
 
   - nombre: "eve-lab-vm"
     estado: "presente"
@@ -128,7 +130,7 @@ entornos:
       ip: "192.168.1.41/24"
       gateway: "192.168.1.30"
     recursos:
-      cores: 2
+      cores: 1   # FIX v2.0: recortado (era 2)
       memoria: 1024
       disco: 20
     firewall_externo:
@@ -150,54 +152,10 @@ entornos:
       ip: "192.168.1.50/24"
       gateway: "192.168.1.30"
     recursos:
-      cores: 2
-      memoria: 512   # FIX v1.9: recortado (era 2048)
+      cores: 1   # FIX v2.0: recortado (era 2)
+      memoria: 512
       disco: 20
     # sin firewall_externo intencional -> catch pendiente (web sin puerto 80)
-
-  - nombre: "stress-vm-web02"
-    estado: "presente"
-    tipo: "vm"
-    core: false
-    efimero: true
-    monitor_enabled: false
-    nodo_proxmox: "reze"
-    vmid: 102
-    plantilla: "debian13-template"
-    servicio: "nginx"
-    red:
-      ip: "192.168.1.59/24"
-      gateway: "192.168.1.30"
-    recursos:
-      cores: 2
-      memoria: 512   # FIX v1.9: recortado (era 2048)
-      disco: 20
-    firewall_externo:
-      - puerto: 80
-        protocolo: "tcp"
-        descripcion: "HTTP"
-
-  - nombre: "stress-vm-api"
-    estado: "presente"
-    tipo: "vm"
-    core: false
-    efimero: true
-    monitor_enabled: true
-    nodo_proxmox: "makima"
-    vmid: 103
-    plantilla: "debian13-template"
-    servicio: "api-python"
-    red:
-      ip: "192.168.1.51/24"
-      gateway: "192.168.1.30"
-    recursos:
-      cores: 4
-      memoria: 512   # FIX v1.9: recortado (era 4096)
-      disco: 30
-    firewall_externo:
-      - puerto: 8000
-        protocolo: "tcp"
-        descripcion: "API REST"
 
   # === VMs PERSISTENTES ===
 
@@ -215,8 +173,8 @@ entornos:
       ip: "192.168.1.52/24"
       gateway: "192.168.1.30"
     recursos:
-      cores: 4
-      memoria: 1024   # FIX v1.9: recortado (era 8192)
+      cores: 1   # FIX v2.0: recortado (era 4)
+      memoria: 1024
       disco: 40
       disco_datos:
         storage: "local-lvm"
@@ -238,8 +196,8 @@ entornos:
       ip: "192.168.1.53/24"
       gateway: "192.168.1.30"
     recursos:
-      cores: 2
-      memoria: 512   # FIX v1.9: recortado (era 4096)
+      cores: 1   # FIX v2.0: recortado (era 2)
+      memoria: 512
       disco: 20
       disco_datos:
         storage: "hdd_data"
@@ -328,8 +286,8 @@ entornos:
       ip: "192.168.1.56/24"
       gateway: "192.168.1.30"
     recursos:
-      cores: 8
-      memoria: 512   # FIX v1.9: recortado (era 16384)
+      cores: 1   # FIX v2.0: recortado (era 8)
+      memoria: 512
       disco: 20
       disco_datos:
         storage: "local-lvm"
@@ -342,8 +300,6 @@ entornos:
       - puerto: 139
         protocolo: "tcp"
         descripcion: "NetBIOS"
-
-  # === Campo requerido y disco -> ok desde v1.7 ===
 
   - nombre: "stress-orphan-novalue"
     estado: "presente"
@@ -362,8 +318,6 @@ entornos:
       memoria: 128
       disco: 4
     # sin firewall_externo intencional -> catch pendiente
-
-  # === Estado invalido -> disco ok desde v1.8 ===
 
   - nombre: "stress-bad-estado"
     estado: "reiniciando"
