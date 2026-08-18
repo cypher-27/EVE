@@ -1,8 +1,8 @@
 # ==========================================
 # EVE - SINGLE SOURCE OF TRUTH (v2.0)
-# STRESS TEST BUILD v1.7
-# Fix aplicado: LXC 'stress-orphan-novalue' disco=2G insuficiente para
-# debian (minimo 4G) -> subido a disco: 4
+# STRESS TEST BUILD v1.8
+# Fix aplicado: VM 'stress-bad-estado' disco=10G menor al minimo del
+# template debian13-template (11G) -> subido a disco: 11
 # Catches confirmados hasta ahora:
 #   v1.0 -> rango de IP fuera de .41-.63 (detectado)
 #   v1.1 -> IP duplicada dentro del rango (detectado)
@@ -11,8 +11,11 @@
 #   v1.4 -> formato de tamano '2T' invalido, solo admite sufijo G (detectado)
 #   v1.5 -> campo requerido 'os' faltante en LXC (detectado)
 #   v1.6 -> disco por debajo del minimo requerido segun el OS (detectado)
-# Posible hueco detectado (no confirmado aun): gateway invalido en
-# stress-lxc-mailhog no fue marcado a pesar de aparecer antes en el archivo.
+#   v1.7 -> disco menor al minimo del template (Proxmox no encoge clones) (detectado)
+# Huecos detectados (no bloquean el pipeline, sospecha fuerte):
+#   - gateway inconsistente con la topologia real -> no se valida
+#   - estado fuera de enum presente/ausente ("reiniciando") -> no se valida,
+#     el validator salto directo al chequeo de disco sin marcar el enum
 # Casos trampa aun pendientes de disparar, sin tocar:
 #   - firewall_externo ausente en recursos "presente" (stress-vm-web01,
 #     stress-vm-db, stress-lxc-redis)
@@ -336,7 +339,7 @@ entornos:
         protocolo: "tcp"
         descripcion: "NetBIOS"
 
-  # === Campo requerido y disco -> FIX v1.7: disco subido a minimo debian ===
+  # === Campo requerido y disco -> ok desde v1.7 ===
 
   - nombre: "stress-orphan-novalue"
     estado: "presente"
@@ -353,10 +356,10 @@ entornos:
     recursos:
       cores: 1
       memoria: 128
-      disco: 4   # FIX v1.7: minimo requerido para debian
+      disco: 4
     # sin firewall_externo intencional -> catch pendiente
 
-  # === Estado invalido (fuera de enum presente/ausente) ===
+  # === Estado invalido -> FIX v1.8: disco subido a minimo del template ===
 
   - nombre: "stress-bad-estado"
     estado: "reiniciando"
@@ -373,7 +376,7 @@ entornos:
     recursos:
       cores: 1
       memoria: 512
-      disco: 10
+      disco: 11   # FIX v1.8: minimo del template debian13-template
     firewall_externo:
       - puerto: 22
         protocolo: "tcp"
