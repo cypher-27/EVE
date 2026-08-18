@@ -48,7 +48,7 @@ entornos:
   # VictoriaMetrics + Grafana. Cambia estado a 'presente' para activarlo.
 
   - nombre: "eve-monitor"
-    estado: "ausente"
+    estado: "presente"
     tipo: "lxc"
     core: false
     os: "alpine"
@@ -82,7 +82,7 @@ entornos:
   # Cambia estado a 'presente' y ajusta los valores para desplegar.
 
   - nombre: "eve-lab-vm"
-    estado: "ausente"
+    estado: "presente"
     tipo: "vm"
     core: false
     efimero: true
@@ -103,7 +103,7 @@ entornos:
         descripcion: "SSH Admin"
 
   - nombre: "eve-lab-lxc"
-    estado: "ausente"
+    estado: "presente"
     tipo: "lxc"
     core: false
     efimero: true
