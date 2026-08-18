@@ -1,13 +1,13 @@
 # ==========================================
 # EVE - SINGLE SOURCE OF TRUTH (v2.0)
-# STRESS TEST BUILD v1.2
-# Fix aplicado: IP duplicada 192.168.1.50 (stress-vm-web01 / stress-vm-web02)
-# -> stress-vm-web02 movido a 192.168.1.59 (unica IP libre en el pool .41-.63)
+# STRESS TEST BUILD v1.3
+# Fix aplicado: VMID duplicado 100 (stress-vm-api / eve-lab-vm)
+# -> stress-vm-api movido a vmid 103 (libre)
 # Catches confirmados hasta ahora:
 #   v1.0 -> rango de IP fuera de .41-.63 (detectado)
 #   v1.1 -> IP duplicada dentro del rango (detectado)
+#   v1.2 -> VMID duplicado (detectado)
 # Casos trampa aun pendientes de disparar, sin tocar:
-#   - vmid duplicado (stress-vm-api = 100, igual que eve-lab-vm)
 #   - firewall_externo ausente en recursos "presente" (stress-vm-web01,
 #     stress-vm-db, stress-lxc-redis, stress-orphan-novalue)
 #   - gateway invalido (stress-lxc-mailhog -> 192.168.1.99)
@@ -154,7 +154,7 @@ entornos:
     plantilla: "debian13-template"
     servicio: "nginx"
     red:
-      ip: "192.168.1.59/24"   # FIX v1.2: IP unica, ya no duplicada
+      ip: "192.168.1.59/24"
       gateway: "192.168.1.30"
     recursos:
       cores: 2
@@ -172,7 +172,7 @@ entornos:
     efimero: true
     monitor_enabled: true
     nodo_proxmox: "makima"
-    vmid: 100   # VMID DUPLICADO intencional con eve-lab-vm (mismo nodo)
+    vmid: 103   # FIX v1.3: VMID unico, ya no duplicado
     plantilla: "debian13-template"
     servicio: "api-python"
     red:
