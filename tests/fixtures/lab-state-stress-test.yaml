@@ -1,0 +1,301 @@
+# ==========================================
+# EVE - YAML de prueba para validator.py v2 (modo agregado)
+# Cada bloque dispara UNA regla específica. Corre:
+#   python3 validator.py
+# apuntando este archivo como lab-state.yaml (o cambia el nombre
+# en validate() temporalmente / usa un symlink) y confirma que
+# TODOS los errores listados abajo aparecen juntos en una sola corrida.
+# ==========================================
+
+entornos:
+
+  # === INFRAESTRUCTURA CORE (necesaria para que gateway_ips no quede vacío) ===
+  - nombre: "doom-gateway"
+    estado: "presente"
+    tipo: "gateway"
+    core: true
+    red:
+      ip: "192.168.1.30/24"
+
+  - nombre: "makima-core"
+    estado: "presente"
+    tipo: "fisico"
+    core: true
+    red:
+      ip: "192.168.1.20/24"
+
+  - nombre: "reze-core"
+    estado: "presente"
+    tipo: "fisico"
+    core: true
+    red:
+      ip: "192.168.1.10/24"
+
+  # === CASO 1: IP fuera de rango (.41-.63) ===
+  - nombre: "stress-ip-range"
+    estado: "presente"
+    tipo: "vm"
+    nodo_proxmox: "makima"
+    vmid: 501
+    plantilla: "debian13-template"
+    red: { ip: "192.168.1.101/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 512, disco: 11 }
+
+  # === CASO 2: IP duplicada (mismo .50 en ambos) ===
+  - nombre: "stress-dup-ip-a"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    nodo_proxmox: "reze"
+    vmid: 502
+    red: { ip: "192.168.1.50/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 2 }
+
+  - nombre: "stress-dup-ip-b"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    nodo_proxmox: "reze"
+    vmid: 503
+    red: { ip: "192.168.1.50/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 2 }
+
+  # === CASO 3: VMID duplicado (600 en ambos) ===
+  - nombre: "stress-dup-vmid-a"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    nodo_proxmox: "reze"
+    vmid: 600
+    red: { ip: "192.168.1.41/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 2 }
+
+  - nombre: "stress-dup-vmid-b"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    nodo_proxmox: "reze"
+    vmid: 600
+    red: { ip: "192.168.1.42/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 2 }
+
+  # === CASO 4: storage no existe en el nodo (hdd_data en reze) ===
+  - nombre: "stress-storage-missing"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    nodo_proxmox: "reze"
+    vmid: 504
+    red: { ip: "192.168.1.43/24", gateway: "192.168.1.30" }
+    recursos:
+      cores: 1
+      memoria: 256
+      disco: 2
+      disco_datos: { storage: "hdd_data", size: "5G", mp: "/data" }
+
+  # === CASO 5: formato de tamaño inválido (2T, no soporta T) ===
+  - nombre: "stress-bad-size"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    nodo_proxmox: "makima"
+    vmid: 505
+    red: { ip: "192.168.1.44/24", gateway: "192.168.1.30" }
+    recursos:
+      cores: 1
+      memoria: 256
+      disco: 2
+      disco_datos: { storage: "hdd_data", size: "2T", mp: "/data" }
+
+  # === CASO 6: LXC sin campo 'os' ===
+  - nombre: "stress-missing-os"
+    estado: "presente"
+    tipo: "lxc"
+    nodo_proxmox: "makima"
+    vmid: 506
+    red: { ip: "192.168.1.45/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 4 }
+
+  # === CASO 7: disco insuficiente para el OS (debian min 4G) ===
+  - nombre: "stress-small-disk-os"
+    estado: "presente"
+    tipo: "lxc"
+    os: "debian"
+    nodo_proxmox: "makima"
+    vmid: 507
+    red: { ip: "192.168.1.46/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 2 }
+
+  # === CASO 8: disco menor al mínimo de la plantilla (debian13-template = 11G) ===
+  - nombre: "stress-small-disk-template"
+    estado: "presente"
+    tipo: "vm"
+    nodo_proxmox: "makima"
+    vmid: 508
+    plantilla: "debian13-template"
+    red: { ip: "192.168.1.47/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 512, disco: 10 }
+
+  # === CASO 9: RAM y CPU overbooking (un solo recurso, disparo ambos) ===
+  - nombre: "stress-ram-cpu-blowout"
+    estado: "presente"
+    tipo: "vm"
+    nodo_proxmox: "makima"
+    vmid: 509
+    plantilla: "debian13-template"
+    red: { ip: "192.168.1.48/24", gateway: "192.168.1.30" }
+    recursos: { cores: 50, memoria: 20000, disco: 12 }
+
+  # === CASO 10: presupuesto de RAM efímera excedido (cap 2048MB) ===
+  - nombre: "stress-ephemeral-ram"
+    estado: "presente"
+    tipo: "vm"
+    efimero: true
+    nodo_proxmox: "makima"
+    vmid: 510
+    plantilla: "debian13-template"
+    red: { ip: "192.168.1.49/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 3000, disco: 12 }
+
+  # === CASO 11 (fix #3): estado con typo, no es 'presente' ni 'ausente' ===
+  - nombre: "stress-bad-estado"
+    estado: "reiniciando"
+    tipo: "lxc"
+    os: "alpine"
+    nodo_proxmox: "makima"
+    vmid: 511
+    red: { ip: "192.168.1.51/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 2 }
+
+  # === CASO 12 (fix #3): gateway no coincide con ningún nodo tipo:gateway ===
+  - nombre: "stress-bad-gateway"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    nodo_proxmox: "makima"
+    vmid: 512
+    red: { ip: "192.168.1.52/24", gateway: "192.168.1.99" }
+    recursos: { cores: 1, memoria: 256, disco: 2 }
+
+  # === CASO 13: formato de IP inválido ===
+  - nombre: "stress-invalid-ip"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    nodo_proxmox: "makima"
+    vmid: 513
+    red: { ip: "999.999.999.999/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 2 }
+
+  # === CASO 14: nodo Proxmox desconocido ===
+  - nombre: "stress-unknown-node"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    nodo_proxmox: "reze2"
+    vmid: 514
+    red: { ip: "192.168.1.53/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 2 }
+
+  # === CASO 15: falta el bloque 'recursos' completo ===
+  - nombre: "stress-missing-recursos"
+    estado: "presente"
+    tipo: "vm"
+    nodo_proxmox: "makima"
+    vmid: 515
+    plantilla: "debian13-template"
+    red: { ip: "192.168.1.54/24", gateway: "192.168.1.30" }
+
+  # === CASO 16: VM sin campo 'plantilla' ===
+  - nombre: "stress-vm-no-plantilla"
+    estado: "presente"
+    tipo: "vm"
+    nodo_proxmox: "makima"
+    vmid: 516
+    red: { ip: "192.168.1.55/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 512, disco: 12 }
+
+  # === CASO 17: LXC sin 'vmid' ===
+  - nombre: "stress-lxc-no-vmid"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    nodo_proxmox: "makima"
+    red: { ip: "192.168.1.56/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 2 }
+
+  # === CASO 18: plantilla de VM desconocida (no registrada en LIMITS) ===
+  - nombre: "stress-unknown-template"
+    estado: "presente"
+    tipo: "vm"
+    nodo_proxmox: "makima"
+    vmid: 517
+    plantilla: "windows11-template"
+    red: { ip: "192.168.1.57/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 512, disco: 20 }
+
+  # === CASO 19: protocolo de firewall inválido ===
+  - nombre: "stress-invalid-protocol"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    nodo_proxmox: "makima"
+    vmid: 518
+    red: { ip: "192.168.1.58/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 2 }
+    firewall_externo:
+      - { puerto: 22, protocolo: "icmp", descripcion: "SSH mal declarado" }
+
+  # === CASO 20: puerto fuera de rango válido ===
+  - nombre: "stress-invalid-port"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    nodo_proxmox: "makima"
+    vmid: 519
+    red: { ip: "192.168.1.59/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 2 }
+    firewall_externo:
+      - { puerto: 99999, protocolo: "tcp", descripcion: "Puerto imposible" }
+
+  # === CASO 21: pide monitoreo, pero eve-monitor no está declarado 'presente' ===
+  - nombre: "stress-monitor-request"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    monitor_enabled: true
+    nodo_proxmox: "makima"
+    vmid: 520
+    red: { ip: "192.168.1.60/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 2 }
+
+  # === CASO 22: nombre duplicado (mismo 'nombre' en dos recursos) ===
+  - nombre: "stress-dup-name"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    nodo_proxmox: "makima"
+    vmid: 522
+    red: { ip: "192.168.1.62/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 2 }
+
+  - nombre: "stress-dup-name"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    nodo_proxmox: "makima"
+    vmid: 523
+    red: { ip: "192.168.1.63/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 2 }
+
+  # === CONTROL: recurso 100% válido, debe pasar sin ningún error ===
+  - nombre: "stress-valid-control"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    nodo_proxmox: "reze"
+    vmid: 521
+    red: { ip: "192.168.1.61/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 2 }
+    firewall_externo:
+      - { puerto: 22, protocolo: "tcp", descripcion: "SSH Admin" }
