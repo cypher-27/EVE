@@ -1,26 +1,25 @@
 # ==========================================
 # EVE - SINGLE SOURCE OF TRUTH (v2.0)
-# STRESS TEST BUILD v2.2 - LIGERO, PARA APPLY REAL
-# Objetivo: confirmar si firewall_externo se aplica en algun punto del
-# pipeline (sospecha: se aplica via Ansible post-provision, no via
-# Terraform/Proxmox nativo, ya que el plan de v2.1 no mostro ningun
-# recurso de firewall pese a que eve-lab-vm SI declaraba SSH 22).
+# STRESS TEST BUILD v2.3 - AISLAR CAUSA DEL FALLO EN STAGE: FIREWALL
 #
-# Se recorta todo lo no esencial para minimizar el blast radius de un
-# apply real. Los catches ya confirmados (IP, VMID, storage, tamano,
-# campos requeridos, RAM/CPU) NO se repiten aqui.
+# Contexto: v2.2 fallo en [STAGE: FIREWALL] con "Failed at: Ansible SDN"
+# al intentar aplicar reglas en doom-gateway. Hipotesis principal:
+# 'stress-fw-empty' NO declara la clave firewall_externo (esta ausente,
+# no es una lista vacia []), y el rol de Ansible SDN probablemente hace
+# un `for rule in host.firewall_externo` en Jinja2 que revienta con
+# AnsibleUndefinedVariable si la clave no existe.
 #
-# Metodo de prueba:
-#   1. terraform apply de este archivo (2 LXC nuevos, minimos)
-#   2. Verificar en cada uno, por SSH o consola Proxmox:
-#      - stress-fw-empty: sin firewall_externo declarado
-#      - stress-fw-full : firewall_externo con SSH 22 declarado
-#   3. Comparar: iptables -L / ufw status / reglas de firewall en
-#      Proxmox GUI (Datacenter > firewall, y a nivel del contenedor)
-#      entre ambos. Si son identicos -> firewall_externo no hace nada
-#      en ningun punto del pipeline (confirma el hallazgo de v2.1).
-#      Si stress-fw-full tiene reglas y stress-fw-empty no -> el
-#      enforcement ocurre en Ansible, fuera de la vista de `terraform plan`.
+# Este build quita 'stress-fw-empty' por completo y deja solo
+# 'stress-fw-full' (que si declara la clave con una regla real).
+# Si el stage de firewall PASA con este build:
+#   -> confirma que el crash es por la clave ausente, no por doom-gateway
+#      en si (conectividad, credenciales, API de Proxmox, etc.)
+#   -> siguiente paso: volver a meter un recurso de control con
+#      firewall_externo: [] (lista vacia explicita) para verificar si
+#      ESE caso si pasa, aislando aun mas: "clave ausente" vs "lista vacia"
+# Si el stage de firewall SIGUE fallando con este build:
+#   -> el problema no es la clave ausente, hay que revisar conectividad/
+#      permisos de Ansible hacia doom-gateway o el modulo SDN en si
 # ==========================================
 
 entornos:
@@ -88,27 +87,7 @@ entornos:
         protocolo: "tcp"
         descripcion: "VictoriaMetrics"
 
-  # === TEST GEMELO A: SIN firewall_externo (control) ===
-
-  - nombre: "stress-fw-empty"
-    estado: "presente"
-    tipo: "lxc"
-    core: false
-    efimero: true
-    monitor_enabled: false
-    os: "alpine"
-    nodo_proxmox: "reze"
-    vmid: 206
-    red:
-      ip: "192.168.1.60/24"
-      gateway: "192.168.1.30"
-    recursos:
-      cores: 1
-      memoria: 256
-      disco: 4
-    # sin firewall_externo -> caso de control
-
-  # === TEST GEMELO B: CON firewall_externo bien declarado ===
+  # === UNICO recurso de prueba: firewall_externo declarado correctamente ===
 
   - nombre: "stress-fw-full"
     estado: "presente"
