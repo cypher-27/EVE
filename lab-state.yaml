@@ -1,34 +1,26 @@
 # ==========================================
 # EVE - SINGLE SOURCE OF TRUTH (v2.0)
-# STRESS TEST BUILD v2.1
-# Fix aplicado: presupuesto de RAM efimera excedido (3712MB / 2048MB)
-# -> memoria de todos los recursos con efimero:true recortada,
-#    total ahora 1920MB (margen de 128MB bajo el tope)
-# Hallazgo: existe un presupuesto de RAM separado solo para recursos
-# efimero:true, distinto del limite total de RAM del cluster (8192MB).
-# Catches confirmados hasta ahora:
-#   v1.0 -> rango de IP fuera de .41-.63
-#   v1.1 -> IP duplicada dentro del rango
-#   v1.2 -> VMID duplicado
-#   v1.3 -> storage pool no existe en el nodo destino
-#   v1.4 -> formato de tamano '2T' invalido, solo admite sufijo G
-#   v1.5 -> campo requerido 'os' faltante en LXC
-#   v1.6 -> disco por debajo del minimo requerido segun el OS
-#   v1.7 -> disco menor al minimo del template (Proxmox no encoge clones)
-#   v1.8 -> RAM overbooking a nivel de suma total de recursos "presente"
-#   v1.9 -> CPU overbooking a nivel de suma total de recursos "presente"
-#   v2.0 -> 11 cores / 11 disponibles PASO -> comparacion es estricta (>)
-#   v2.0 -> RAM efimera excedida (presupuesto separado de 2048MB)
-# Huecos detectados (no bloquean el pipeline, sospecha fuerte):
-#   - gateway inconsistente con la topologia real -> no se valida
-#   - estado fuera de enum presente/ausente ("reiniciando") -> no se valida
-# Casos trampa aun pendientes de disparar, sin tocar:
-#   - firewall_externo ausente en recursos "presente" (stress-vm-web01,
-#     stress-vm-db, stress-lxc-redis)
-#   - gateway invalido (stress-lxc-mailhog -> 192.168.1.99)
-#   - efimero:true + disco_datos persistente (stress-vm-db-replica)
-#   - estado fuera de enum (stress-bad-estado -> "reiniciando")
-#   - dependencia de monitoreo rota (eve-monitor-b ausente)
+# STRESS TEST BUILD v2.2 - LIGERO, PARA APPLY REAL
+# Objetivo: confirmar si firewall_externo se aplica en algun punto del
+# pipeline (sospecha: se aplica via Ansible post-provision, no via
+# Terraform/Proxmox nativo, ya que el plan de v2.1 no mostro ningun
+# recurso de firewall pese a que eve-lab-vm SI declaraba SSH 22).
+#
+# Se recorta todo lo no esencial para minimizar el blast radius de un
+# apply real. Los catches ya confirmados (IP, VMID, storage, tamano,
+# campos requeridos, RAM/CPU) NO se repiten aqui.
+#
+# Metodo de prueba:
+#   1. terraform apply de este archivo (2 LXC nuevos, minimos)
+#   2. Verificar en cada uno, por SSH o consola Proxmox:
+#      - stress-fw-empty: sin firewall_externo declarado
+#      - stress-fw-full : firewall_externo con SSH 22 declarado
+#   3. Comparar: iptables -L / ufw status / reglas de firewall en
+#      Proxmox GUI (Datacenter > firewall, y a nivel del contenedor)
+#      entre ambos. Si son identicos -> firewall_externo no hace nada
+#      en ningun punto del pipeline (confirma el hallazgo de v2.1).
+#      Si stress-fw-full tiene reglas y stress-fw-empty no -> el
+#      enforcement ocurre en Ansible, fuera de la vista de `terraform plan`.
 # ==========================================
 
 entornos:
@@ -64,7 +56,7 @@ entornos:
         protocolo: "tcp"
         descripcion: "Proxmox GUI"
 
-  # === MONITOREO - GRAFANA ON (no efimero, no cuenta en el presupuesto) ===
+  # === MONITOREO (ya desplegado, sin cambios) ===
 
   - nombre: "eve-monitor"
     estado: "presente"
@@ -96,247 +88,44 @@ entornos:
         protocolo: "tcp"
         descripcion: "VictoriaMetrics"
 
-  # === MONITOREO - GRAFANA OFF, colector secundario ausente ===
+  # === TEST GEMELO A: SIN firewall_externo (control) ===
 
-  - nombre: "eve-monitor-b"
-    estado: "ausente"
+  - nombre: "stress-fw-empty"
+    estado: "presente"
     tipo: "lxc"
     core: false
+    efimero: true
+    monitor_enabled: false
     os: "alpine"
     nodo_proxmox: "reze"
-    vmid: 301
-    monitor_enabled: false
+    vmid: 206
     red:
-      ip: "192.168.1.45/24"
+      ip: "192.168.1.60/24"
       gateway: "192.168.1.30"
     recursos:
       cores: 1
-      memoria: 512
-      disco: 8
-    # sin firewall_externo intencional, recurso "ausente"
+      memoria: 256
+      disco: 4
+    # sin firewall_externo -> caso de control
 
-  # === VM EFÍMERA ===
+  # === TEST GEMELO B: CON firewall_externo bien declarado ===
 
-  - nombre: "eve-lab-vm"
-    estado: "presente"
-    tipo: "vm"
-    core: false
-    efimero: true
-    monitor_enabled: true
-    nodo_proxmox: "makima"
-    vmid: 100
-    plantilla: "debian13-template"
-    red:
-      ip: "192.168.1.41/24"
-      gateway: "192.168.1.30"
-    recursos:
-      cores: 1
-      memoria: 512   # FIX v2.1: recortado (era 1024)
-      disco: 20
-    firewall_externo:
-      - puerto: 22
-        protocolo: "tcp"
-        descripcion: "SSH Admin"
-
-  - nombre: "stress-vm-web01"
-    estado: "presente"
-    tipo: "vm"
-    core: false
-    efimero: true
-    monitor_enabled: true
-    nodo_proxmox: "makima"
-    vmid: 101
-    plantilla: "debian13-template"
-    servicio: "nginx"
-    red:
-      ip: "192.168.1.50/24"
-      gateway: "192.168.1.30"
-    recursos:
-      cores: 1
-      memoria: 256   # FIX v2.1: recortado (era 512)
-      disco: 20
-    # sin firewall_externo intencional -> catch pendiente (web sin puerto 80)
-
-  # === VMs PERSISTENTES (no efimero, no cuentan en el presupuesto) ===
-
-  - nombre: "stress-vm-db"
-    estado: "presente"
-    tipo: "vm"
-    core: false
-    efimero: false
-    monitor_enabled: true
-    nodo_proxmox: "reze"
-    vmid: 110
-    plantilla: "debian13-template"
-    servicio: "postgresql"
-    red:
-      ip: "192.168.1.52/24"
-      gateway: "192.168.1.30"
-    recursos:
-      cores: 1
-      memoria: 1024
-      disco: 40
-      disco_datos:
-        storage: "local-lvm"
-        size: "200G"
-        mp: "/var/lib/postgresql"
-    # sin firewall_externo intencional -> catch pendiente (DB cerrada)
-
-  - nombre: "stress-vm-db-replica"
-    estado: "presente"
-    tipo: "vm"
-    core: false
-    efimero: true   # contradiccion intencional: efimero + disco_datos persistente
-    monitor_enabled: true
-    nodo_proxmox: "makima"
-    vmid: 111
-    plantilla: "debian13-template"
-    servicio: "postgresql-replica"
-    red:
-      ip: "192.168.1.53/24"
-      gateway: "192.168.1.30"
-    recursos:
-      cores: 1
-      memoria: 256   # FIX v2.1: recortado (era 512)
-      disco: 20
-      disco_datos:
-        storage: "hdd_data"
-        size: "200G"
-        mp: "/var/lib/postgresql"
-    firewall_externo:
-      - puerto: 5432
-        protocolo: "tcp"
-        descripcion: "Postgres replication"
-
-  # === LXCs EFÍMEROS ===
-
-  - nombre: "eve-lab-lxc"
+  - nombre: "stress-fw-full"
     estado: "presente"
     tipo: "lxc"
     core: false
     efimero: true
-    monitor_enabled: true
+    monitor_enabled: false
     os: "alpine"
     nodo_proxmox: "reze"
-    vmid: 200
+    vmid: 207
     red:
-      ip: "192.168.1.42/24"
+      ip: "192.168.1.61/24"
       gateway: "192.168.1.30"
     recursos:
       cores: 1
-      memoria: 128   # FIX v2.1: recortado (era 256)
+      memoria: 256
       disco: 4
-    firewall_externo:
-      - puerto: 22
-        protocolo: "tcp"
-        descripcion: "SSH Admin"
-
-  - nombre: "stress-lxc-redis"
-    estado: "presente"
-    tipo: "lxc"
-    core: false
-    efimero: true
-    monitor_enabled: true
-    os: "alpine"
-    nodo_proxmox: "reze"
-    vmid: 201
-    servicio: "redis"
-    red:
-      ip: "192.168.1.54/24"
-      gateway: "192.168.1.30"
-    recursos:
-      cores: 1
-      memoria: 256   # FIX v2.1: recortado (era 512)
-      disco: 4
-    # sin firewall_externo intencional -> caso "control" valido
-
-  - nombre: "stress-lxc-mailhog"
-    estado: "presente"
-    tipo: "lxc"
-    core: false
-    efimero: true
-    monitor_enabled: false
-    os: "debian"
-    nodo_proxmox: "makima"
-    vmid: 202
-    servicio: "mailhog"
-    red:
-      ip: "192.168.1.55/24"
-      gateway: "192.168.1.99"   # gateway invalido intencional -> catch pendiente
-    recursos:
-      cores: 1
-      memoria: 128   # FIX v2.1: recortado (era 256)
-      disco: 4
-    firewall_externo:
-      - puerto: 8025
-        protocolo: "tcp"
-        descripcion: "MailHog UI"
-
-  # === LXC persistente (no efimero, no cuenta en el presupuesto) ===
-
-  - nombre: "stress-lxc-fileserver"
-    estado: "presente"
-    tipo: "lxc"
-    core: false
-    efimero: false
-    monitor_enabled: true
-    os: "debian"
-    nodo_proxmox: "reze"
-    vmid: 203
-    servicio: "samba"
-    red:
-      ip: "192.168.1.56/24"
-      gateway: "192.168.1.30"
-    recursos:
-      cores: 1
-      memoria: 512
-      disco: 20
-      disco_datos:
-        storage: "local-lvm"
-        size: "2000G"
-        mp: "/srv/samba"
-    firewall_externo:
-      - puerto: 445
-        protocolo: "tcp"
-        descripcion: "SMB"
-      - puerto: 139
-        protocolo: "tcp"
-        descripcion: "NetBIOS"
-
-  - nombre: "stress-orphan-novalue"
-    estado: "presente"
-    tipo: "lxc"
-    core: false
-    efimero: true
-    monitor_enabled: false
-    os: "debian"
-    nodo_proxmox: "makima"
-    vmid: 204
-    red:
-      ip: "192.168.1.57/24"
-      gateway: "192.168.1.30"
-    recursos:
-      cores: 1
-      memoria: 128
-      disco: 4
-    # sin firewall_externo intencional -> catch pendiente
-
-  - nombre: "stress-bad-estado"
-    estado: "reiniciando"
-    tipo: "vm"
-    core: false
-    efimero: true
-    monitor_enabled: false
-    nodo_proxmox: "reze"
-    vmid: 205
-    plantilla: "debian13-template"
-    red:
-      ip: "192.168.1.58/24"
-      gateway: "192.168.1.30"
-    recursos:
-      cores: 1
-      memoria: 256   # FIX v2.1: recortado (era 512)
-      disco: 11
     firewall_externo:
       - puerto: 22
         protocolo: "tcp"
