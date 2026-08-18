@@ -2,6 +2,12 @@
 # EVE - SINGLE SOURCE OF TRUTH (v2.0)
 # ==========================================
 
+# NOTA: `firewall_externo` NO genera recursos de Terraform por host.
+# Se aplica de forma centralizada vía SDN en doom-gateway
+# (ver ansible/sdn-gateway/deploy-firewall.yml + templates/eve-firewall.j2).
+# `terraform plan` mostrará siempre network { firewall = false } en cada
+# VM/LXC — es el comportamiento esperado, no un bug.
+
 entornos:
 
   # === INFRAESTRUCTURA CORE ===
@@ -14,6 +20,7 @@ entornos:
     core: true
     red:
       ip: "192.168.1.30/24"
+      management_ip: "10.1.1.1"   # IP de ZeroTier, usada en CI/GitHub Actions
 
   - nombre: "makima-core"
     estado: "presente"

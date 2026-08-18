@@ -239,8 +239,9 @@ stage_firewall() {
 
     CURRENT_STEP="SDN Firewall"
     echo -e "${CYAN}[*] Applying firewall rules on doom-gateway...${NC}"
-    ansible-playbook -i localhost, ansible/sdn-gateway/deploy-firewall.yml > /dev/null 2>&1 \
-        || handle_error "Ansible SDN" "Failed to apply firewall rules."
+    local sdn_out
+    sdn_out=$(ANSIBLE_VERBOSITY=3 ansible-playbook -i localhost, ansible/sdn-gateway/deploy-firewall.yml 2>&1) \
+        || handle_error "Ansible SDN" "$(echo "$sdn_out" | tail -80)"
     SDN_APPLIED=true
     save_state
     echo -e "${GREEN}✓ Firewall rules applied${NC}"
