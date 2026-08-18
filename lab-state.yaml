@@ -1,22 +1,25 @@
 # ==========================================
 # EVE - SINGLE SOURCE OF TRUTH (v2.0)
-# STRESS TEST BUILD v1.5
-# Fix aplicado: formato de tamaño invalido '2T' en disco_datos
-# -> stress-lxc-fileserver cambiado a '2000G' (equivalente en GB)
+# STRESS TEST BUILD v1.6
+# Fix aplicado: LXC 'stress-orphan-novalue' faltaba campo requerido 'os'
+# -> agregado os: "debian"
 # Catches confirmados hasta ahora:
 #   v1.0 -> rango de IP fuera de .41-.63 (detectado)
 #   v1.1 -> IP duplicada dentro del rango (detectado)
 #   v1.2 -> VMID duplicado (detectado)
 #   v1.3 -> storage pool no existe en el nodo destino (detectado)
 #   v1.4 -> formato de tamano '2T' invalido, solo admite sufijo G (detectado)
+#   v1.5 -> campo requerido 'os' faltante en LXC (detectado)
+# Posible hueco detectado (no confirmado aun): el validator paso por encima
+# de 'stress-lxc-mailhog' (gateway 192.168.1.99, invalido) sin marcar error,
+# a pesar de aparecer antes en el archivo -> sugiere que gateway no se valida.
 # Casos trampa aun pendientes de disparar, sin tocar:
 #   - firewall_externo ausente en recursos "presente" (stress-vm-web01,
-#     stress-vm-db, stress-lxc-redis, stress-orphan-novalue)
+#     stress-vm-db, stress-lxc-redis)
 #   - gateway invalido (stress-lxc-mailhog -> 192.168.1.99)
 #   - efimero:true + disco_datos persistente (stress-vm-db-replica)
 #   - estado fuera de enum (stress-bad-estado -> "reiniciando")
 #   - dependencia de monitoreo rota (eve-monitor-b ausente)
-#   - campo obligatorio faltante os/plantilla (stress-orphan-novalue)
 # ==========================================
 
 entornos:
@@ -323,7 +326,7 @@ entornos:
       disco: 20
       disco_datos:
         storage: "local-lvm"
-        size: "2000G"   # FIX v1.5: '2T' invalido, sufijo debe ser G
+        size: "2000G"
         mp: "/srv/samba"
     firewall_externo:
       - puerto: 445
@@ -333,7 +336,7 @@ entornos:
         protocolo: "tcp"
         descripcion: "NetBIOS"
 
-  # === Campo obligatorio faltante (sin os / plantilla) ===
+  # === Campo obligatorio faltante -> FIX v1.6: os agregado ===
 
   - nombre: "stress-orphan-novalue"
     estado: "presente"
@@ -341,6 +344,7 @@ entornos:
     core: false
     efimero: true
     monitor_enabled: false
+    os: "debian"   # FIX v1.6: campo requerido faltante
     nodo_proxmox: "makima"
     vmid: 204
     red:
@@ -350,7 +354,7 @@ entornos:
       cores: 1
       memoria: 128
       disco: 2
-    # sin firewall_externo intencional
+    # sin firewall_externo intencional -> catch pendiente
 
   # === Estado invalido (fuera de enum presente/ausente) ===
 
