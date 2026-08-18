@@ -1,7 +1,9 @@
 # ==========================================
 # EVE - SINGLE SOURCE OF TRUTH (v2.0)
-# STRESS TEST BUILD - generado para probar validator/janitor
-# Cada bloque tiene un comentario "TEST:" explicando qué arista intenta romper.
+# STRESS TEST BUILD v1.1
+# Fix aplicado: rango de IP de pool "lab" = 192.168.1.41 - 192.168.1.63
+# (catch reportado por el validator en v1.0 sobre stress-vm-web01)
+# Casos trampa restantes se dejan intencionalmente sin tocar.
 # ==========================================
 
 entornos:
@@ -38,7 +40,6 @@ entornos:
         descripcion: "Proxmox GUI"
 
   # === MONITOREO - GRAFANA ON ===
-  # TEST: monitor_enabled=true, con Grafana y VictoriaMetrics activos y expuestos.
 
   - nombre: "eve-monitor"
     estado: "presente"
@@ -70,10 +71,8 @@ entornos:
         protocolo: "tcp"
         descripcion: "VictoriaMetrics"
 
-  # === MONITOREO - GRAFANA OFF, PERO monitor_enabled=true EN OTRO NODO ===
-  # TEST: dos "monitores" simultáneos (uno alive, otro apagado). El validator
-  # ¿detecta que hay un segundo colector con monitor_enabled true apuntando
-  # a un eve-monitor secundario que está "ausente"? Dependencia rota.
+  # === MONITOREO - GRAFANA OFF, colector secundario ausente ===
+  # TEST pendiente: dependencia de monitoreo rota.
 
   - nombre: "eve-monitor-b"
     estado: "ausente"
@@ -90,10 +89,9 @@ entornos:
       cores: 1
       memoria: 512
       disco: 8
-    # TEST: sin firewall_externo en un recurso "ausente" -> ¿el validator
-    # se queja aunque el nodo no exista, o solo valida recursos "presente"?
+    # sin firewall_externo intencional, recurso "ausente"
 
-  # === VMs EFÍMERAS (varias, para saturar el nodo) ===
+  # === VMs EFÍMERAS ===
 
   - nombre: "eve-lab-vm"
     estado: "presente"
@@ -127,14 +125,13 @@ entornos:
     plantilla: "debian13-template"
     servicio: "nginx"
     red:
-      ip: "192.168.1.101/24"
+      ip: "192.168.1.50/24"   # FIX v1.1: dentro de rango .41-.63
       gateway: "192.168.1.30"
     recursos:
       cores: 2
       memoria: 2048
       disco: 20
-    # TEST: sin firewall_externo -> web server sin puerto 80/443 declarado.
-    # ¿El validator lo marca como "recurso huérfano sin exposición" o lo ignora?
+    # sin firewall_externo intencional -> catch pendiente (web sin puerto 80)
 
   - nombre: "stress-vm-web02"
     estado: "presente"
@@ -147,7 +144,7 @@ entornos:
     plantilla: "debian13-template"
     servicio: "nginx"
     red:
-      ip: "192.168.1.101/24"   # TEST: IP DUPLICADA con stress-vm-web01
+      ip: "192.168.1.50/24"   # IP DUPLICADA intencional con stress-vm-web01
       gateway: "192.168.1.30"
     recursos:
       cores: 2
@@ -165,11 +162,11 @@ entornos:
     efimero: true
     monitor_enabled: true
     nodo_proxmox: "makima"
-    vmid: 100   # TEST: VMID DUPLICADO con eve-lab-vm (mismo nodo)
+    vmid: 100   # VMID DUPLICADO intencional con eve-lab-vm (mismo nodo)
     plantilla: "debian13-template"
     servicio: "api-python"
     red:
-      ip: "192.168.1.103/24"
+      ip: "192.168.1.51/24"
       gateway: "192.168.1.30"
     recursos:
       cores: 4
@@ -180,7 +177,7 @@ entornos:
         protocolo: "tcp"
         descripcion: "API REST"
 
-  # === VMs PERSISTENTES (con disco de datos, no efímeras) ===
+  # === VMs PERSISTENTES ===
 
   - nombre: "stress-vm-db"
     estado: "presente"
@@ -193,7 +190,7 @@ entornos:
     plantilla: "debian13-template"
     servicio: "postgresql"
     red:
-      ip: "192.168.1.110/24"
+      ip: "192.168.1.52/24"
       gateway: "192.168.1.30"
     recursos:
       cores: 4
@@ -203,24 +200,20 @@ entornos:
         storage: "hdd_data"
         size: "200G"
         mp: "/var/lib/postgresql"
-    # TEST: sin firewall_externo -> DB persistente totalmente cerrada
-    # al exterior. ¿Es esto un pase silencioso o el validator exige
-    # al menos SSH admin en todo recurso "presente"?
+    # sin firewall_externo intencional -> catch pendiente (DB cerrada)
 
   - nombre: "stress-vm-db-replica"
     estado: "presente"
     tipo: "vm"
     core: false
-    efimero: true          # TEST: contradicción -> réplica de DB marcada
-                            # como efímera pero con disco_datos persistente.
-                            # ¿El janitor la borraría destruyendo datos?
+    efimero: true   # contradicción intencional: efimero + disco_datos persistente
     monitor_enabled: true
     nodo_proxmox: "makima"
     vmid: 111
     plantilla: "debian13-template"
     servicio: "postgresql-replica"
     red:
-      ip: "192.168.1.111/24"
+      ip: "192.168.1.53/24"
       gateway: "192.168.1.30"
     recursos:
       cores: 2
@@ -235,7 +228,7 @@ entornos:
         protocolo: "tcp"
         descripcion: "Postgres replication"
 
-  # === LXCs EFÍMEROS (containers ligeros, servicios variados) ===
+  # === LXCs EFÍMEROS ===
 
   - nombre: "eve-lab-lxc"
     estado: "presente"
@@ -269,14 +262,13 @@ entornos:
     vmid: 201
     servicio: "redis"
     red:
-      ip: "192.168.1.201/24"
+      ip: "192.168.1.54/24"
       gateway: "192.168.1.30"
     recursos:
       cores: 1
       memoria: 512
       disco: 4
-    # TEST: sin firewall_externo -> redis solo accesible interno,
-    # correcto por diseño. Sirve de "control" (caso válido sin firewall).
+    # sin firewall_externo intencional -> caso "control" válido
 
   - nombre: "stress-lxc-mailhog"
     estado: "presente"
@@ -289,8 +281,8 @@ entornos:
     vmid: 202
     servicio: "mailhog"
     red:
-      ip: "192.168.1.202/24"
-      gateway: "192.168.1.99"   # TEST: gateway apunta a IP que no es doom-gateway
+      ip: "192.168.1.55/24"
+      gateway: "192.168.1.99"   # gateway inválido intencional -> catch pendiente
     recursos:
       cores: 1
       memoria: 256
@@ -299,10 +291,6 @@ entornos:
       - puerto: 8025
         protocolo: "tcp"
         descripcion: "MailHog UI"
-
-  # === LXC PERSISTENTE con recursos sobredimensionados ===
-  # TEST: saturar el nodo "reze" en memoria/cores para ver si el validator
-  # suma recursos por nodo y detecta sobre-asignación.
 
   - nombre: "stress-lxc-fileserver"
     estado: "presente"
@@ -315,7 +303,7 @@ entornos:
     vmid: 203
     servicio: "samba"
     red:
-      ip: "192.168.1.203/24"
+      ip: "192.168.1.56/24"
       gateway: "192.168.1.30"
     recursos:
       cores: 8
@@ -333,9 +321,7 @@ entornos:
         protocolo: "tcp"
         descripcion: "NetBIOS"
 
-  # === CASO LÍMITE: recurso "presente", core:false, SIN os/plantilla ===
-  # TEST: campo obligatorio faltante (ni os ni plantilla). ¿El validator
-  # rechaza el build o asume un default silencioso?
+  # === Campo obligatorio faltante (sin os / plantilla) ===
 
   - nombre: "stress-orphan-novalue"
     estado: "presente"
@@ -346,16 +332,15 @@ entornos:
     nodo_proxmox: "makima"
     vmid: 204
     red:
-      ip: "192.168.1.204/24"
+      ip: "192.168.1.57/24"
       gateway: "192.168.1.30"
     recursos:
       cores: 1
       memoria: 128
       disco: 2
-    # sin firewall_externo intencional -> tercer caso de "silencio" a probar
+    # sin firewall_externo intencional
 
-  # === CASO LÍMITE: estado desconocido, no "presente" ni "ausente" ===
-  # TEST: valor de enum inválido para ver si el parser explota o lo ignora.
+  # === Estado inválido (fuera de enum presente/ausente) ===
 
   - nombre: "stress-bad-estado"
     estado: "reiniciando"
@@ -367,7 +352,7 @@ entornos:
     vmid: 205
     plantilla: "debian13-template"
     red:
-      ip: "192.168.1.205/24"
+      ip: "192.168.1.58/24"
       gateway: "192.168.1.30"
     recursos:
       cores: 1
