@@ -1,21 +1,25 @@
 # ==========================================
 # EVE - SINGLE SOURCE OF TRUTH (v2.0)
-# STRESS TEST BUILD v1.8
-# Fix aplicado: VM 'stress-bad-estado' disco=10G menor al minimo del
-# template debian13-template (11G) -> subido a disco: 11
+# STRESS TEST BUILD v1.9
+# Fix aplicado: RAM overbooking (40064MB solicitados / 8192MB disponibles)
+# -> memoria recortada en los recursos mas pesados, total ahora ~6784MB
+# Hallazgo importante: el chequeo de RAM excluyo a 'eve-monitor-b' (estado
+# ausente) del total, y el numero '8192MB available' parece ser un solo
+# valor global, no por nodo -> posible bug si makima y reze tienen RAM
+# fisica independiente. Revisar el codigo del validator despues del test.
 # Catches confirmados hasta ahora:
-#   v1.0 -> rango de IP fuera de .41-.63 (detectado)
-#   v1.1 -> IP duplicada dentro del rango (detectado)
-#   v1.2 -> VMID duplicado (detectado)
-#   v1.3 -> storage pool no existe en el nodo destino (detectado)
-#   v1.4 -> formato de tamano '2T' invalido, solo admite sufijo G (detectado)
-#   v1.5 -> campo requerido 'os' faltante en LXC (detectado)
-#   v1.6 -> disco por debajo del minimo requerido segun el OS (detectado)
-#   v1.7 -> disco menor al minimo del template (Proxmox no encoge clones) (detectado)
+#   v1.0 -> rango de IP fuera de .41-.63
+#   v1.1 -> IP duplicada dentro del rango
+#   v1.2 -> VMID duplicado
+#   v1.3 -> storage pool no existe en el nodo destino
+#   v1.4 -> formato de tamano '2T' invalido, solo admite sufijo G
+#   v1.5 -> campo requerido 'os' faltante en LXC
+#   v1.6 -> disco por debajo del minimo requerido segun el OS
+#   v1.7 -> disco menor al minimo del template (Proxmox no encoge clones)
+#   v1.8 -> RAM overbooking a nivel de suma total de recursos "presente"
 # Huecos detectados (no bloquean el pipeline, sospecha fuerte):
 #   - gateway inconsistente con la topologia real -> no se valida
-#   - estado fuera de enum presente/ausente ("reiniciando") -> no se valida,
-#     el validator salto directo al chequeo de disco sin marcar el enum
+#   - estado fuera de enum presente/ausente ("reiniciando") -> no se valida
 # Casos trampa aun pendientes de disparar, sin tocar:
 #   - firewall_externo ausente en recursos "presente" (stress-vm-web01,
 #     stress-vm-db, stress-lxc-redis)
@@ -147,7 +151,7 @@ entornos:
       gateway: "192.168.1.30"
     recursos:
       cores: 2
-      memoria: 2048
+      memoria: 512   # FIX v1.9: recortado (era 2048)
       disco: 20
     # sin firewall_externo intencional -> catch pendiente (web sin puerto 80)
 
@@ -166,7 +170,7 @@ entornos:
       gateway: "192.168.1.30"
     recursos:
       cores: 2
-      memoria: 2048
+      memoria: 512   # FIX v1.9: recortado (era 2048)
       disco: 20
     firewall_externo:
       - puerto: 80
@@ -188,7 +192,7 @@ entornos:
       gateway: "192.168.1.30"
     recursos:
       cores: 4
-      memoria: 4096
+      memoria: 512   # FIX v1.9: recortado (era 4096)
       disco: 30
     firewall_externo:
       - puerto: 8000
@@ -212,7 +216,7 @@ entornos:
       gateway: "192.168.1.30"
     recursos:
       cores: 4
-      memoria: 8192
+      memoria: 1024   # FIX v1.9: recortado (era 8192)
       disco: 40
       disco_datos:
         storage: "local-lvm"
@@ -235,7 +239,7 @@ entornos:
       gateway: "192.168.1.30"
     recursos:
       cores: 2
-      memoria: 4096
+      memoria: 512   # FIX v1.9: recortado (era 4096)
       disco: 20
       disco_datos:
         storage: "hdd_data"
@@ -325,7 +329,7 @@ entornos:
       gateway: "192.168.1.30"
     recursos:
       cores: 8
-      memoria: 16384
+      memoria: 512   # FIX v1.9: recortado (era 16384)
       disco: 20
       disco_datos:
         storage: "local-lvm"
@@ -359,7 +363,7 @@ entornos:
       disco: 4
     # sin firewall_externo intencional -> catch pendiente
 
-  # === Estado invalido -> FIX v1.8: disco subido a minimo del template ===
+  # === Estado invalido -> disco ok desde v1.8 ===
 
   - nombre: "stress-bad-estado"
     estado: "reiniciando"
@@ -376,7 +380,7 @@ entornos:
     recursos:
       cores: 1
       memoria: 512
-      disco: 11   # FIX v1.8: minimo del template debian13-template
+      disco: 11
     firewall_externo:
       - puerto: 22
         protocolo: "tcp"
