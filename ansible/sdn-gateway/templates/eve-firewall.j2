@@ -1,4 +1,5 @@
 #!/bin/bash
+
 # ==========================================
 # EVE GATEWAY - SDN FIREWALL (Ansible Managed)
 # ==========================================
@@ -15,6 +16,13 @@ iptables -F
 iptables -X
 iptables -t nat -F
 iptables -t nat -X
+
+# Fijar politica default a DROP como respaldo — si por alguna razon
+# el script termina antes de llegar al catch-all explicito al final,
+# no queda el sistema abierto por default de Linux (ACCEPT).
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT ACCEPT
 
 # 2. NAT
 iptables -t nat -A POSTROUTING -o $LAN_IFACE -j MASQUERADE
@@ -33,15 +41,15 @@ iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
 # --- ZONA DINÁMICA: GENERADA DESDE LAB-STATE.YAML ---
 {% for env in entornos_activos %}
 {% if env.estado == "presente" %}
-# Reglas para: {{ env.nombre }} (IP: {{ env.red.ip.split('/')[0] }})
 
+# Reglas para: {{ env.nombre }} (IP: {{ env.red.ip.split('/')[0] }})
 # Usamos | default([]) para que si no existe 'firewall_externo', no explote
 {% for rule in env.firewall_externo | default([]) %}
+
 # {{ rule.descripcion | default(rule.protocolo + ':' + rule.puerto | string) }}
 iptables -A FORWARD -i $WG_IFACE -d {{ env.red.ip.split('/')[0] }} -p {{ rule.protocolo }} --dport {{ rule.puerto }} -j ACCEPT
 iptables -A FORWARD -i $ZT_IFACE -d {{ env.red.ip.split('/')[0] }} -p {{ rule.protocolo }} --dport {{ rule.puerto }} -j ACCEPT
 {% endfor %}
-
 {% endif %}
 {% endfor %}
 
@@ -52,5 +60,10 @@ iptables -A FORWARD -p icmp -j ACCEPT
 # Bloqueo total al resto de la LAN (Default Drop para VPNs)
 iptables -A FORWARD -i $WG_IFACE -d $LAN_SUBNET -j DROP
 iptables -A FORWARD -i $ZT_IFACE -d $LAN_SUBNET -j DROP
+
+# Catch-all: cualquier cosa no permitida explícitamente arriba, se descarta.
+# (FORWARD policy queda en ACCEPT por default de Linux si no se fija aquí;
+# sin esta línea, la allowlist de arriba es decorativa.)
+iptables -A FORWARD -j DROP
 
 echo "EVE Firewall: SDN actualizado dinámicamente desde el contrato maestro."
