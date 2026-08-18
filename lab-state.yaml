@@ -1,9 +1,20 @@
 # ==========================================
 # EVE - SINGLE SOURCE OF TRUTH (v2.0)
-# STRESS TEST BUILD v1.1
-# Fix aplicado: rango de IP de pool "lab" = 192.168.1.41 - 192.168.1.63
-# (catch reportado por el validator en v1.0 sobre stress-vm-web01)
-# Casos trampa restantes se dejan intencionalmente sin tocar.
+# STRESS TEST BUILD v1.2
+# Fix aplicado: IP duplicada 192.168.1.50 (stress-vm-web01 / stress-vm-web02)
+# -> stress-vm-web02 movido a 192.168.1.59 (unica IP libre en el pool .41-.63)
+# Catches confirmados hasta ahora:
+#   v1.0 -> rango de IP fuera de .41-.63 (detectado)
+#   v1.1 -> IP duplicada dentro del rango (detectado)
+# Casos trampa aun pendientes de disparar, sin tocar:
+#   - vmid duplicado (stress-vm-api = 100, igual que eve-lab-vm)
+#   - firewall_externo ausente en recursos "presente" (stress-vm-web01,
+#     stress-vm-db, stress-lxc-redis, stress-orphan-novalue)
+#   - gateway invalido (stress-lxc-mailhog -> 192.168.1.99)
+#   - efimero:true + disco_datos persistente (stress-vm-db-replica)
+#   - estado fuera de enum (stress-bad-estado -> "reiniciando")
+#   - dependencia de monitoreo rota (eve-monitor-b ausente)
+#   - campo obligatorio faltante os/plantilla (stress-orphan-novalue)
 # ==========================================
 
 entornos:
@@ -72,7 +83,6 @@ entornos:
         descripcion: "VictoriaMetrics"
 
   # === MONITOREO - GRAFANA OFF, colector secundario ausente ===
-  # TEST pendiente: dependencia de monitoreo rota.
 
   - nombre: "eve-monitor-b"
     estado: "ausente"
@@ -125,7 +135,7 @@ entornos:
     plantilla: "debian13-template"
     servicio: "nginx"
     red:
-      ip: "192.168.1.50/24"   # FIX v1.1: dentro de rango .41-.63
+      ip: "192.168.1.50/24"
       gateway: "192.168.1.30"
     recursos:
       cores: 2
@@ -144,7 +154,7 @@ entornos:
     plantilla: "debian13-template"
     servicio: "nginx"
     red:
-      ip: "192.168.1.50/24"   # IP DUPLICADA intencional con stress-vm-web01
+      ip: "192.168.1.59/24"   # FIX v1.2: IP unica, ya no duplicada
       gateway: "192.168.1.30"
     recursos:
       cores: 2
@@ -206,7 +216,7 @@ entornos:
     estado: "presente"
     tipo: "vm"
     core: false
-    efimero: true   # contradicción intencional: efimero + disco_datos persistente
+    efimero: true   # contradiccion intencional: efimero + disco_datos persistente
     monitor_enabled: true
     nodo_proxmox: "makima"
     vmid: 111
@@ -268,7 +278,7 @@ entornos:
       cores: 1
       memoria: 512
       disco: 4
-    # sin firewall_externo intencional -> caso "control" válido
+    # sin firewall_externo intencional -> caso "control" valido
 
   - nombre: "stress-lxc-mailhog"
     estado: "presente"
@@ -282,7 +292,7 @@ entornos:
     servicio: "mailhog"
     red:
       ip: "192.168.1.55/24"
-      gateway: "192.168.1.99"   # gateway inválido intencional -> catch pendiente
+      gateway: "192.168.1.99"   # gateway invalido intencional -> catch pendiente
     recursos:
       cores: 1
       memoria: 256
@@ -340,7 +350,7 @@ entornos:
       disco: 2
     # sin firewall_externo intencional
 
-  # === Estado inválido (fuera de enum presente/ausente) ===
+  # === Estado invalido (fuera de enum presente/ausente) ===
 
   - nombre: "stress-bad-estado"
     estado: "reiniciando"
