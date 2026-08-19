@@ -35,8 +35,8 @@ jobs:
 
       - name: Run validator unit tests (pytest)
         run: |
-          pip install --break-system-packages --quiet pytest
-          python -m pytest tests/ -v
+          python3 -m pip install --break-system-packages --quiet pytest
+          python3 -m pytest tests/ -v
 
       - name: Verify Age identity
         run: |
