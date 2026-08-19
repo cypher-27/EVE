@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """
 EVE Validator — Enforces cluster topology rules against lab-state.yaml
-"""
 
+v3: Core validation logic extracted into collect_errors(entornos), a pure
+function with no I/O and no module-level state, so it can be imported and
+unit-tested with pytest (see tests/test_validator.py). validate() remains
+the CLI entrypoint used by orchestrator.sh — same behavior, same exit codes.
+"""
 import sys
 import yaml
 import ipaddress
+from dataclasses import dataclass, field
 
 # ==============================================================================
 # Cluster Governance & Physical Topology
@@ -24,7 +29,6 @@ LIMITS = {
         "debian13-template": 11,
     },
     "lxc_templates": {
-        # os_key → { "tarball": nombre del archivo, "disco_minimo": GB }
         "alpine":  { "tarball": "alpine-eve-custom.tar.zst",                    "disco_minimo": 2 },
         "debian":  { "tarball": "debian-12-standard_12.12-1_amd64.tar.zst",     "disco_minimo": 4 },
     }
@@ -45,33 +49,31 @@ RED    = "\033[0;31m"
 YELLOW = "\033[0;33m"
 NC     = "\033[0m"
 
-ERRORS: list[str] = []
-
 def log(color: str, msg: str) -> None:
     print(f"{color}{msg}{NC}")
-
-def fail(msg: str) -> None:
-    """Record a validation error without stopping the run (aggregated mode)."""
-    log(RED, f"[!] VALIDATION ERROR: {msg}")
-    ERRORS.append(msg)
 
 def fatal(msg: str) -> None:
     """Unrecoverable error — nothing else can run (e.g. contract unreadable)."""
     log(RED, f"[!] FATAL ERROR: {msg}")
     sys.exit(1)
 
+@dataclass
+class ValidationResult:
+    errors: list = field(default_factory=list)
+    total_ram: int = 0
+    total_cores: int = 0
+
 # ==============================================================================
-# Validator
+# Pure validator — no file I/O, no sys.exit, no module-level state.
+# This is what pytest imports and calls directly.
 # ==============================================================================
 
-def validate() -> None:
-    try:
-        with open("lab-state.yaml") as f:
-            data = yaml.safe_load(f)
-    except Exception as e:
-        fatal(f"Cannot read lab-state.yaml: {e}")
+def collect_errors(entornos: list) -> ValidationResult:
+    errors: list = []
 
-    entornos = data.get("entornos", [])
+    def fail(msg: str) -> None:
+        log(RED, f"[!] VALIDATION ERROR: {msg}")
+        errors.append(msg)
 
     total_ram      = 0
     total_cores    = 0
@@ -95,8 +97,6 @@ def validate() -> None:
         and "red" in e and "ip" in e["red"]
     }
 
-    log(YELLOW, "[*] Starting EVE topology validation...")
-
     for env in entornos:
         name         = env.get("nombre", "unknown")
         state        = env.get("estado",  "ausente")
@@ -107,7 +107,6 @@ def validate() -> None:
         node         = env.get("nodo_proxmox")
         vmid         = env.get("vmid")
 
-        # Duplicate checks (safe to continue — don't affect downstream math)
         if name in seen_names:
             fail(f"Duplicate name: '{name}'")
         seen_names.add(name)
@@ -159,8 +158,8 @@ def validate() -> None:
 
             missing_fields = [f for f in ["cores", "memoria", "disco"] if recursos.get(f) is None]
             if missing_fields:
-                for field in missing_fields:
-                    fail(f"'{name}' missing recursos.{field}")
+                for field_name in missing_fields:
+                    fail(f"'{name}' missing recursos.{field_name}")
                 continue
 
             ram        = recursos.get("memoria", 0)
@@ -172,7 +171,6 @@ def validate() -> None:
             if is_ephemeral:
                 ephemeral_ram += ram
 
-            # VM: template size check
             if kind == "vm":
                 plantilla = env.get("plantilla")
                 min_disk  = LIMITS["templates"].get(plantilla)
@@ -185,7 +183,6 @@ def validate() -> None:
                          f"template '{plantilla}' minimum ({min_disk}G). "
                          f"Proxmox cannot shrink a disk on clone.")
 
-            # LXC: ostemplate registration check + disco mínimo
             if kind == "lxc":
                 lxc_tpl = LIMITS["lxc_templates"].get(os_distro)
                 if lxc_tpl is None:
@@ -196,7 +193,6 @@ def validate() -> None:
                     fail(f"LXC '{name}': disco={disk_root}G is below minimum "
                          f"for '{os_distro}' ({lxc_tpl['disco_minimo']}G).")
 
-            # Ephemeral resources on makima go to hdd_data; otherwise local-zfs
             assigned_pool = "hdd_data" if (is_ephemeral and node == "makima") else "local-zfs"
 
             extra_disk = recursos.get("disco_datos", {})
@@ -207,7 +203,7 @@ def validate() -> None:
                     extra_size = int(extra_size_str.replace("G", "").replace("g", ""))
                 except ValueError:
                     fail(f"Invalid size format in disco_datos of '{name}': {extra_size_str}")
-                    extra_size = 0  # degrade gracefully, keep checking the rest of this resource
+                    extra_size = 0
 
                 if extra_pool == "hdd_data" and node == "reze":
                     fail(f"'{name}' requests 'hdd_data' on node 'reze', but that pool does not exist.")
@@ -217,7 +213,6 @@ def validate() -> None:
 
             disk_usage[node][assigned_pool] += disk_root
 
-            # Firewall rules
             for rule in env.get("firewall_externo", []):
                 port     = rule.get("puerto")
                 protocol = rule.get("protocolo", "tcp").lower()
@@ -260,7 +255,6 @@ def validate() -> None:
                 if not (IP_RANGE_START <= ip_obj <= IP_RANGE_END):
                     fail(f"IP of '{name}' ({ip_str}) is outside the allowed range (.41–.63)")
 
-    # --- Quota checks ---
     if requesting_monitor and not monitor_present:
         fail(f"Resources {requesting_monitor} request monitoring, but eve-monitor is ABSENT.")
 
@@ -273,21 +267,38 @@ def validate() -> None:
     if ephemeral_ram > LIMITS["ram_ephemeral_mb"]:
         fail(f"Ephemeral RAM limit exceeded: {ephemeral_ram}MB / {LIMITS['ram_ephemeral_mb']}MB")
 
-    for node, pools in LIMITS["nodes"].items():
+    for node_name, pools in LIMITS["nodes"].items():
         for pool, limit in pools.items():
-            used = disk_usage[node][pool]
+            used = disk_usage[node_name][pool]
             if used > limit:
-                fail(f"Storage exceeded on {node}/{pool}: {used}GB requested / {limit}GB available")
+                fail(f"Storage exceeded on {node_name}/{pool}: {used}GB requested / {limit}GB available")
 
-    # --- Final report ---
-    if ERRORS:
-        log(RED, f"\n[✗] Validation FAILED with {len(ERRORS)} error(s):")
-        for i, err in enumerate(ERRORS, 1):
+    return ValidationResult(errors=errors, total_ram=total_ram, total_cores=total_cores)
+
+# ==============================================================================
+# CLI entrypoint — used by orchestrator.sh. Same external behavior as before.
+# ==============================================================================
+
+def validate() -> None:
+    try:
+        with open("lab-state.yaml") as f:
+            data = yaml.safe_load(f)
+    except Exception as e:
+        fatal(f"Cannot read lab-state.yaml: {e}")
+
+    entornos = data.get("entornos", [])
+    log(YELLOW, "[*] Starting EVE topology validation...")
+
+    result = collect_errors(entornos)
+
+    if result.errors:
+        log(RED, f"\n[✗] Validation FAILED with {len(result.errors)} error(s):")
+        for i, err in enumerate(result.errors, 1):
             log(YELLOW, f"  {i}. {err}")
         sys.exit(1)
 
-    log(GREEN, f"[✓] Validation passed — RAM: {total_ram}/{LIMITS['ram_total_mb']}MB | "
-               f"CPU: {total_cores}/{LIMITS['cpu_total']}")
+    log(GREEN, f"[✓] Validation passed — RAM: {result.total_ram}/{LIMITS['ram_total_mb']}MB | "
+               f"CPU: {result.total_cores}/{LIMITS['cpu_total']}")
     sys.exit(0)
 
 
