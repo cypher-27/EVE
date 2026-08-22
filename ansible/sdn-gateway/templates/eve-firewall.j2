@@ -38,6 +38,9 @@ iptables -A INPUT -j DROP
 # 4. Reglas FORWARD (Reenvío)
 iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
 
+# Permitir que la LAN salga a internet vía la interfaz de uplink
+iptables -A FORWARD -s $LAN_SUBNET -o $LAN_IFACE -j ACCEPT
+
 # --- ZONA DINÁMICA: GENERADA DESDE LAB-STATE.YAML ---
 {% for env in entornos_activos %}
 {% if env.estado == "presente" %}
