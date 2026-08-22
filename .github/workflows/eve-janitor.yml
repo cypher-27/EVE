@@ -27,8 +27,13 @@ jobs:
         run: |
           sops -d secrets.enc.yaml | python3 -c "
           import sys, yaml
-          for k, v in yaml.safe_load(sys.stdin).items():
-              print(f'{k.upper()}={v}')" >> $GITHUB_ENV
+          data = yaml.safe_load(sys.stdin)
+          with open('$GITHUB_ENV', 'a') as env_file:
+              for k, v in data.items():
+                  print(f'::add-mask::{v}')
+                  env_file.write(f'{k.upper()}={v}\n')
+          "
+          
       - name: Validate confirmation
         if: github.event_name == 'workflow_dispatch'
         run: |
@@ -57,7 +62,7 @@ jobs:
               sys.exit(0)
           print(f"Targets resolved: {', '.join(targets)}")
           with open('janitor-targets.txt', 'w') as f:
-              f.write('\n'.join(targets))
+              f.write('\n'.join(targets) + '\n')
           EOF
         env:
           JANITOR_MODE: ${{ github.event_name == 'schedule' && 'ephemeral' || github.event.inputs.mode }}
@@ -96,7 +101,7 @@ jobs:
             exit 0
           fi
           chmod +x orchestrator.sh
-          while IFS= read -r target; do
+          while IFS= read -r target || [ -n "$target" ]; do
             echo "[*] Destroying: $target"
             OUTPUT=$(./orchestrator.sh --destroy-target "$target" 2>&1)
             EXIT_CODE=$?
