@@ -21,8 +21,12 @@ jobs:
         run: |
           sops -d secrets.enc.yaml | python3 -c "
           import sys, yaml
-          for k, v in yaml.safe_load(sys.stdin).items():
-              print(f'{k.upper()}={v}')" >> $GITHUB_ENV
+          data = yaml.safe_load(sys.stdin)
+          with open('$GITHUB_ENV', 'a') as env_file:
+              for k, v in data.items():
+                  print(f'::add-mask::{v}')
+                  env_file.write(f'{k.upper()}={v}\n')
+          "
 
       - name: Verify toolchain
         run: |
