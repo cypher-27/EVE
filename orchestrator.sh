@@ -307,15 +307,19 @@ stage_config() {
     CURRENT_STEP="Base Configuration"
     echo -e "${CYAN}[*] Applying base node configuration...${NC}"
     local node_out
-    node_out=$(ansible-playbook -i localhost, ansible/node-config/setup_base.yml 2>&1) \
-        || handle_error "Ansible Node Config" "$node_out"
+    node_out=$(ansible-playbook -i localhost, ansible/node-config/setup_base.yml 2>&1 | tee /dev/stderr)
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+        handle_error "Ansible Node Config" "$node_out"
+    fi
     echo -e "${GREEN}✓ Base configuration applied${NC}"
 
     CURRENT_STEP="Monitoring Stack"
     echo -e "${CYAN}[*] Configuring monitoring stack...${NC}"
     local monitor_out
-    monitor_out=$(ansible-playbook -i localhost, ansible/monitor/setup_monitor.yml 2>&1) \
-        || handle_error "Ansible Monitor" "$monitor_out"
+    monitor_out=$(ansible-playbook -i localhost, ansible/monitor/setup_monitor.yml 2>&1 | tee /dev/stderr)
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+        handle_error "Ansible Monitor" "$monitor_out"
+    fi
     echo -e "${GREEN}✓ Monitoring configured${NC}"
 
     echo -e "${GREEN}[STAGE: CONFIG] ✓ Done${NC}"
