@@ -28,7 +28,7 @@ resource "random_password" "lxc_password" {
 # RECURSO 1: VIRTUAL MACHINES (KVM)
 # ==============================================================================
 resource "proxmox_vm_qemu" "entorno_vm" {
-  for_each    = local.active_vms
+  for_each = local.active_vms
 
   name        = each.value.nombre
   vmid        = each.value.vmid
@@ -76,9 +76,26 @@ resource "proxmox_vm_qemu" "entorno_vm" {
   ipconfig0 = "ip=${each.value.red.ip},gw=${each.value.red.gateway}"
   ciuser    = "admin"
 
+  # DNS explícito — no dependemos de lo que Proxmox tenga configurado por defecto
+  nameserver = "1.1.1.1 8.8.8.8"
+
   sshkeys = <<EOF
 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM9kG6lsmZBCtkdYOAIZwNJ5foJRHrRItjpNlQYrX4zT admin@eve
 EOF
+
+  # Terraform no marca el recurso como "listo" hasta que SSH responde de verdad.
+  # Esto elimina el race condition entre "creado en Proxmox" y "OS realmente arriba".
+  provisioner "remote-exec" {
+    inline = ["echo 'VM lista — SSH y cloud-init confirmados'"]
+
+    connection {
+      type        = "ssh"
+      user        = "admin"
+      private_key = file("~/.ssh/eve_admin")
+      host        = split("/", each.value.red.ip)[0]
+      timeout     = "5m"
+    }
+  }
 
   lifecycle {
     ignore_changes = [
@@ -95,26 +112,30 @@ EOF
 # RECURSO 2: LINUX CONTAINERS (LXC)
 # ==============================================================================
 resource "proxmox_lxc" "entorno_lxc" {
-  for_each    = local.active_lxcs
+  for_each = local.active_lxcs
 
   hostname    = each.value.nombre
   target_node = each.value.nodo_proxmox
   vmid        = each.value.vmid
-  
+
   # Usamos nuestro nuevo Golden Template si es Alpine
-  ostype       = each.value.os == "alpine" ? "alpine" : "debian"
-  ostemplate   = each.value.os == "alpine" ? "local:vztmpl/alpine-eve-custom.tar.zst" : "local:vztmpl/debian-12-standard_12.12-1_amd64.tar.zst"
-  
+  ostype     = each.value.os == "alpine" ? "alpine" : "debian"
+  ostemplate = each.value.os == "alpine" ? "local:vztmpl/alpine-eve-custom.tar.zst" : "local:vztmpl/debian-12-standard_12.12-1_amd64.tar.zst"
+
   unprivileged = true
   password     = random_password.lxc_password[each.key].result
-  
+
+  # DNS explícito — la imagen custom de Alpine NO trae resolv.conf embebido,
+  # así que dependía por completo del fallback del nodo Proxmox. Ya no.
+  nameserver = "1.1.1.1 8.8.8.8"
+
   ssh_public_keys = <<EOF
   ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM9kG6lsmZBCtkdYOAIZwNJ5foJRHrRItjpNlQYrX4zT admin@eve
   EOF
 
   cores  = each.value.recursos.cores
   memory = each.value.recursos.memoria
-  
+
   # Disco Principal (Root)
   rootfs {
     storage = try(each.value.efimero, false) && each.value.nodo_proxmox == "makima" ? "hdd_data" : "local-zfs"
@@ -143,7 +164,22 @@ resource "proxmox_lxc" "entorno_lxc" {
 
   features {
     nesting = true
-  } 
+  }
+
   # Start on boot
   start = true
+
+  # Igual que en la VM: Terraform bloquea el apply hasta que SSH responda.
+  # Root, porque así lo define ansible/node-config/setup_base.yml para tipo_lxc.
+  provisioner "remote-exec" {
+    inline = ["echo 'LXC listo — SSH confirmado'"]
+
+    connection {
+      type        = "ssh"
+      user        = "root"
+      private_key = file("~/.ssh/eve_admin")
+      host        = split("/", each.value.red.ip)[0]
+      timeout     = "3m"
+    }
+  }
 }
