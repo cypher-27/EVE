@@ -44,10 +44,17 @@
     lab_state: "{{ lookup('file', '../../lab-state.yaml') | from_yaml }}"
 
   pre_tasks:
-    - name: "Esperar a que el host acepte conexión SSH real"
-      ansible.builtin.wait_for_connection:
-        delay: 5
-        timeout: 120
+    - name: "Esperar a que el host acepte SSH real (sin depender de Python)"
+      # OJO: wait_for_connection usa internamente el módulo 'ping', que
+      # requiere Python en el remoto. Eso rompe Alpine porque Python aún
+      # no está instalado en este punto — dependencia circular. 'raw' no
+      # necesita intérprete, así que sirve como chequeo previo real.
+      ansible.builtin.raw: echo ready
+      register: ssh_ready
+      retries: 12
+      delay: 10
+      until: ssh_ready is succeeded
+      changed_when: false
 
     - name: "Bootstrap: Instalar Python en Alpine (vía RAW, con reintentos reales)"
       ansible.builtin.raw: apk update && apk add --no-cache python3 && which python3
@@ -58,11 +65,6 @@
       changed_when: "'Installing' in bootstrap_result.stdout"
       when:
         - "'type_lxc' in group_names"
-      # NOTA: se removió failed_when: false. Ese era el bug real que
-      # enmascaraba cualquier fallo de apk (incluyendo falta de red o
-      # DNS no disponible aún) como si el task hubiera tenido éxito,
-      # provocando que el fallo apareciera 2 tasks después con un
-      # mensaje de error mucho menos claro.
 
     - name: "Recolectar Facts ahora que Python existe"
       ansible.builtin.setup:
