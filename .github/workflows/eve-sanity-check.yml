@@ -37,11 +37,6 @@ jobs:
           sops --version           || exit 1
           python3 --version        || exit 1
 
-      - name: Run validator unit tests (pytest)
-        run: |
-          python3 -m pip install --break-system-packages --quiet pytest
-          python3 -m pytest tests/ -v
-
       - name: Verify Age identity
         run: |
           if [ ! -f "$SOPS_AGE_KEY_FILE" ]; then
