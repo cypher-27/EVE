@@ -152,6 +152,17 @@ check_required_files() {
     [ -f "secrets.enc.yaml" ]  || { echo -e "${RED}[ERROR] secrets.enc.yaml not found${NC}";  exit 1; }
 }
 
+# --- VENV (para pytest, sin tocar el Python del sistema / evitar
+# "externally-managed-environment" en Fedora/Debian recientes) ---
+ensure_venv() {
+    if [ ! -d ".venv" ]; then
+        echo -e "${CYAN}[*] .venv not found — creating it...${NC}"
+        python3 -m venv .venv || handle_error "Venv Setup" "Failed to create .venv (is python3-venv installed?)"
+    fi
+    .venv/bin/pip install -q -r requirements.txt \
+        || handle_error "Venv Setup" "Failed to install requirements.txt into .venv"
+}
+
 # --- ROLLBACK ---
 cleanup() {
     local exit_code=$?
@@ -204,6 +215,12 @@ stage_validate() {
     CURRENT_STEP="Load Secrets"
     load_secrets
     echo -e "${GREEN}✓ Secrets loaded${NC}"
+
+    CURRENT_STEP="Unit Tests"
+    echo -e "${CYAN}[*] Running validator unit tests...${NC}"
+    ensure_venv
+    .venv/bin/pytest tests/ -v || handle_error "Unit Tests" "pytest suite failed — validator.py logic may be broken (check for regressions in collect_errors)."
+    echo -e "${GREEN}✓ Unit tests passed${NC}"
 
     CURRENT_STEP="Contract Validation"
     python3 validator.py || handle_error "Contract Validation" "lab-state.yaml violates cluster rules."
