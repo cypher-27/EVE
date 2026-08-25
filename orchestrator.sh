@@ -152,7 +152,7 @@ check_required_files() {
     [ -f "secrets.enc.yaml" ]  || { echo -e "${RED}[ERROR] secrets.enc.yaml not found${NC}";  exit 1; }
 }
 
-# --- VENV (para pytest, sin tocar el Python del sistema / evitar
+# --- VENV (para pytest/checkov, sin tocar el Python del sistema / evitar
 # "externally-managed-environment" en Fedora/Debian recientes) ---
 ensure_venv() {
     if [ ! -d ".venv" ]; then
@@ -217,9 +217,9 @@ stage_validate() {
     echo -e "${GREEN}✓ Secrets loaded${NC}"
 
     CURRENT_STEP="Unit Tests"
-    echo -e "${CYAN}[*] Running validator unit tests...${NC}"
+    echo -e "${CYAN}[*] Running validator + firewall-template unit tests...${NC}"
     ensure_venv
-    .venv/bin/pytest tests/ -v || handle_error "Unit Tests" "pytest suite failed — validator.py logic may be broken (check for regressions in collect_errors)."
+    .venv/bin/pytest tests/ -v || handle_error "Unit Tests" "pytest suite failed — validator.py or eve-firewall.j2 logic may be broken."
     echo -e "${GREEN}✓ Unit tests passed${NC}"
 
     CURRENT_STEP="Contract Validation"
@@ -233,6 +233,17 @@ stage_validate() {
     tf_out=$(terraform validate 2>&1) || handle_error "Terraform Validate" "$tf_out"
     cd "$SCRIPT_DIR"
     echo -e "${GREEN}✓ Terraform valid${NC}"
+
+    CURRENT_STEP="Policy Scan"
+    echo -e "${CYAN}[*] Running Checkov policy scan...${NC}"
+    ensure_venv
+    local checkov_out
+    checkov_out=$(.venv/bin/checkov -d terraform/ --external-checks-dir custom_checks/ \
+        --check CKV_EVE_1 --compact --quiet 2>&1)
+    if [ $? -ne 0 ]; then
+        handle_error "Policy Scan" "$checkov_out"
+    fi
+    echo -e "${GREEN}✓ Policy scan passed (CKV_EVE_1: no host-level firewall on Proxmox resources)${NC}"
 
     CURRENT_STEP="Ansible Lint"
     ansible-playbook ansible/sdn-gateway/deploy-firewall.yml  --syntax-check > /dev/null 2>&1 \
