@@ -99,6 +99,10 @@
         update_cache: yes
         upgrade: yes
       when: ansible_os_family == "Alpine"
+      register: apk_result
+      retries: 3
+      delay: 15
+      until: apk_result is succeeded
 
     - name: "2.3 Instalar dependencias globales"
       ansible.builtin.package:
