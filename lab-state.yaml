@@ -51,6 +51,7 @@ entornos:
     estado: "presente"
     tipo: "lxc"
     core: false
+    efimero: false
     os: "alpine"
     nodo_proxmox: "makima"
     vmid: 300
@@ -85,7 +86,7 @@ entornos:
     estado: "presente"
     tipo: "vm"
     core: false
-    efimero: true
+    efimero: false
     monitor_enabled: true
     nodo_proxmox: "makima"
     vmid: 100
@@ -106,7 +107,7 @@ entornos:
     estado: "presente"
     tipo: "lxc"
     core: false
-    efimero: true
+    efimero: false
     monitor_enabled: true
     os: "alpine"
     nodo_proxmox: "reze"
