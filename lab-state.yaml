@@ -1,26 +1,24 @@
-# ==========================================
-# EVE - SINGLE SOURCE OF TRUTH (v2.0)
-# ==========================================
 
-# NOTA: `firewall_externo` NO genera recursos de Terraform por host.
-# Se aplica de forma centralizada vía SDN en doom-gateway
-# (ver ansible/sdn-gateway/deploy-firewall.yml + templates/eve-firewall.j2).
-# `terraform plan` mostrará siempre network { firewall = false } en cada
-# VM/LXC — es el comportamiento esperado, no un bug.
+# ==========================================
+# EVE - Full-cycle stress manifest (deploy everything, then destroy everything)
+# NOT the production lab-state.yaml. Back up your real file first:
+#   cp lab-state.yaml lab-state.yaml.production.bak
+# 10 non-core resources across both nodes, both OS, VM+LXC, ephemeral +
+# persistent, disco_datos aggregation on hdd_data, mixed TCP/UDP firewall
+# rules, and monitor_enabled on a mix of resource types.
+# Totals: 11/11 cores | 4608/8192 MB RAM (512 ephemeral) |
+#   makima: 37/100 local-zfs, 453/850 hdd_data | reze: 27/850 local-zfs
+# ==========================================
 
 entornos:
 
-  # === INFRAESTRUCTURA CORE ===
-  # Estos recursos son físicos o permanentes.
-  # El validator y el janitor nunca los tocan.
-
+  # === CORE INFRASTRUCTURE (physical, not managed by Terraform) ===
   - nombre: "doom-gateway"
     estado: "presente"
     tipo: "gateway"
     core: true
     red:
       ip: "192.168.1.30/24"
-      management_ip: "10.1.1.1"   # IP de ZeroTier, usada en CI/GitHub Actions
 
   - nombre: "makima-core"
     estado: "presente"
@@ -28,10 +26,6 @@ entornos:
     core: true
     red:
       ip: "192.168.1.20/24"
-    firewall_externo:
-      - puerto: 8006
-        protocolo: "tcp"
-        descripcion: "Proxmox GUI"
 
   - nombre: "reze-core"
     estado: "presente"
@@ -39,88 +33,142 @@ entornos:
     core: true
     red:
       ip: "192.168.1.10/24"
-    firewall_externo:
-      - puerto: 8006
-        protocolo: "tcp"
-        descripcion: "Proxmox GUI"
 
-  # === MONITOREO ===
-  # VictoriaMetrics + Grafana. Cambia estado a 'presente' para activarlo.
-
+  # === Monitoring stack (mandatory static IP) ===
   - nombre: "eve-monitor"
     estado: "presente"
     tipo: "lxc"
-    core: false
-    efimero: false
-    os: "alpine"
-    nodo_proxmox: "makima"
-    vmid: 300
-    monitor_enabled: false
-    red:
-      ip: "192.168.1.40/24"
-      gateway: "192.168.1.30"
-    recursos:
-      cores: 1
-      memoria: 512
-      disco: 8
-      disco_datos:
-        storage: "hdd_data"
-        size: "50G"
-        mp: "/var/lib/victoria-metrics"
-    firewall_externo:
-      - puerto: 22
-        protocolo: "tcp"
-        descripcion: "SSH Admin"
-      - puerto: 3000
-        protocolo: "tcp"
-        descripcion: "Grafana"
-      - puerto: 8428
-        protocolo: "tcp"
-        descripcion: "VictoriaMetrics"
-
-  # === TEMPLATES DE REFERENCIA ===
-  # Ejemplos de cómo declarar una VM y un LXC.
-  # Cambia estado a 'presente' y ajusta los valores para desplegar.
-
-  - nombre: "eve-lab-vm"
-    estado: "presente"
-    tipo: "vm"
-    core: false
-    efimero: false
-    monitor_enabled: true
-    nodo_proxmox: "makima"
-    vmid: 100
-    plantilla: "debian13-template"
-    red:
-      ip: "192.168.1.41/24"
-      gateway: "192.168.1.30"
-    recursos:
-      cores: 2
-      memoria: 1024
-      disco: 20
-    firewall_externo:
-      - puerto: 22
-        protocolo: "tcp"
-        descripcion: "SSH Admin"
-
-  - nombre: "eve-lab-lxc"
-    estado: "presente"
-    tipo: "lxc"
-    core: false
-    efimero: false
-    monitor_enabled: true
     os: "alpine"
     nodo_proxmox: "reze"
-    vmid: 200
-    red:
-      ip: "192.168.1.42/24"
-      gateway: "192.168.1.30"
+    vmid: 900
+    red: { ip: "192.168.1.40/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 512, disco: 4 }
+    firewall_externo:
+      - { puerto: 22, protocolo: "tcp", descripcion: "SSH Admin" }
+      - { puerto: 3000, protocolo: "tcp", descripcion: "Grafana" }
+      - { puerto: 8428, protocolo: "tcp", descripcion: "VictoriaMetrics" }
+
+  # === makima: web VM, monitored, multi-port (web + API on one host) ===
+  - nombre: "eve-web-vm"
+    estado: "presente"
+    tipo: "vm"
+    nodo_proxmox: "makima"
+    vmid: 910
+    plantilla: "debian13-template"
+    monitor_enabled: true
+    red: { ip: "192.168.1.41/24", gateway: "192.168.1.30" }
+    recursos: { cores: 2, memoria: 1024, disco: 15 }
+    firewall_externo:
+      - { puerto: 80, protocolo: "tcp", descripcion: "HTTP" }
+      - { puerto: 443, protocolo: "tcp", descripcion: "HTTPS" }
+      - { puerto: 8080, protocolo: "tcp", descripcion: "API" }
+
+  # === makima: cache LXC (alpine), monitored ===
+  - nombre: "eve-cache-lxc"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    nodo_proxmox: "makima"
+    vmid: 911
+    monitor_enabled: true
+    red: { ip: "192.168.1.42/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 4 }
+    firewall_externo:
+      - { puerto: 6379, protocolo: "tcp", descripcion: "Redis" }
+
+  # === makima: queue LXC (debian), NOT monitored (deliberate contrast) ===
+  - nombre: "eve-queue-lxc"
+    estado: "presente"
+    tipo: "lxc"
+    os: "debian"
+    nodo_proxmox: "makima"
+    vmid: 912
+    red: { ip: "192.168.1.43/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 6 }
+    firewall_externo:
+      - { puerto: 5672, protocolo: "tcp", descripcion: "RabbitMQ" }
+      - { puerto: 15672, protocolo: "tcp", descripcion: "RabbitMQ Management UI" }
+
+  # === makima: backup LXC, no firewall_externo at all (tests default([])) ===
+  - nombre: "eve-backup-lxc"
+    estado: "presente"
+    tipo: "lxc"
+    os: "debian"
+    nodo_proxmox: "makima"
+    vmid: 913
+    red: { ip: "192.168.1.44/24", gateway: "192.168.1.30" }
     recursos:
       cores: 1
       memoria: 256
       disco: 4
-    firewall_externo:
-      - puerto: 22
-        protocolo: "tcp"
-        descripcion: "SSH Admin"
+      disco_datos: { storage: "hdd_data", size: "300G", mp: "/backups" }
 
+  # === makima: logs LXC, mixed TCP/UDP firewall, monitored ===
+  - nombre: "eve-logs-lxc"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    nodo_proxmox: "makima"
+    vmid: 914
+    monitor_enabled: true
+    red: { ip: "192.168.1.45/24", gateway: "192.168.1.30" }
+    recursos:
+      cores: 1
+      memoria: 256
+      disco: 3
+      disco_datos: { storage: "hdd_data", size: "150G", mp: "/logs" }
+    firewall_externo:
+      - { puerto: 514, protocolo: "udp", descripcion: "Syslog UDP" }
+      - { puerto: 6514, protocolo: "tcp", descripcion: "Syslog TLS" }
+
+  # === makima: ephemeral worker, routed to hdd_data automatically, monitored ===
+  - nombre: "eve-ephemeral-worker"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    efimero: true
+    monitor_enabled: true
+    nodo_proxmox: "makima"
+    vmid: 915
+    red: { ip: "192.168.1.46/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 512, disco: 3 }
+
+  # === reze: database VM, monitored ===
+  - nombre: "eve-db-vm"
+    estado: "presente"
+    tipo: "vm"
+    nodo_proxmox: "reze"
+    vmid: 916
+    plantilla: "debian13-template"
+    monitor_enabled: true
+    red: { ip: "192.168.1.47/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 1024, disco: 20 }
+    firewall_externo:
+      - { puerto: 5432, protocolo: "tcp", descripcion: "PostgreSQL" }
+
+  # === reze: small app LXC, monitored ===
+  - nombre: "eve-app-lxc-reze"
+    estado: "presente"
+    tipo: "lxc"
+    os: "alpine"
+    nodo_proxmox: "reze"
+    vmid: 917
+    monitor_enabled: true
+    red: { ip: "192.168.1.48/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 3 }
+    firewall_externo:
+      - { puerto: 3000, protocolo: "tcp", descripcion: "App HTTP" }
+
+  # === makima: secure LXC, 3 firewall rules incl. UDP, NOT monitored ===
+  - nombre: "eve-secure-lxc"
+    estado: "presente"
+    tipo: "lxc"
+    os: "debian"
+    nodo_proxmox: "makima"
+    vmid: 918
+    red: { ip: "192.168.1.49/24", gateway: "192.168.1.30" }
+    recursos: { cores: 1, memoria: 256, disco: 5 }
+    firewall_externo:
+      - { puerto: 22, protocolo: "tcp", descripcion: "SSH Admin" }
+      - { puerto: 443, protocolo: "tcp", descripcion: "HTTPS Alt" }
+      - { puerto: 51820, protocolo: "udp", descripcion: "WireGuard" }
