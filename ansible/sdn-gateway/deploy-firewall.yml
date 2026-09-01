@@ -1,8 +1,8 @@
 ---
 # ==============================================================================
-# PLAY 1: Identificar al Gateway desde el SSOT
+# PLAY 1: Identify the Gateway from the SSOT
 # ==============================================================================
-- name: "Fase 1: Identificar Gateway desde SSOT"
+- name: "Phase 1: Identify Gateway from SSOT"
   hosts: localhost
   connection: local
   gather_facts: false
@@ -11,12 +11,12 @@
     path_to_contract: "{{ playbook_dir }}/../../lab-state.yaml"
 
   tasks:
-    - name: "1.1 Leer el contrato maestro"
+    - name: "1.1 Read the master contract"
       ansible.builtin.include_vars:
         file: "{{ path_to_contract }}"
         name: contrato
 
-    - name: "1.2 Inyectar Gateway al inventario en memoria"
+    - name: "1.2 Inject Gateway into in-memory inventory"
       ansible.builtin.add_host:
         name: "{{ item.nombre }}"
         groups: "gateway_nodes"
@@ -30,14 +30,14 @@
         - item.tipo == "gateway"
 
 # ==============================================================================
-# PLAY 2: Configurar el Firewall (Ejecución Real)
+# PLAY 2: Configure the Firewall (Real Execution)
 # ==============================================================================
-- name: "Fase 2: Aplicar Reglas de Firewall SDN"
+- name: "Phase 2: Apply SDN Firewall Rules"
   hosts: gateway_nodes
   become: yes
 
   vars:
-    # Estas variables son propias de la lógica de red de la Pi
+    # These variables belong to the Pi's network logic
     lan_iface: "eth0"
     rasp_lan_ip: "192.168.1.30"
     wg_iface: "wg0"
@@ -45,12 +45,12 @@
     lan_subnet: "192.168.1.0/24"
 
   tasks:
-    - name: "2.1 Re-cargar contrato para usarlo en el template"
+    - name: "2.1 Reload contract for use in the template"
       ansible.builtin.include_vars:
         file: "{{ playbook_dir }}/../../lab-state.yaml"
         name: contrato
 
-    - name: "2.2 Generar script de Firewall (Jinja2)"
+    - name: "2.2 Generate Firewall script (Jinja2)"
       ansible.builtin.template:
         src: templates/eve-firewall.j2
         dest: /usr/local/bin/eve-firewall.sh
@@ -58,7 +58,7 @@
       vars:
         entornos_activos: "{{ contrato.entornos }}"
 
-    - name: "2.3 Aplicar y Reiniciar Firewall"
+    - name: "2.3 Apply and Restart Firewall"
       ansible.builtin.systemd:
         name: eve-firewall.service
         state: restarted

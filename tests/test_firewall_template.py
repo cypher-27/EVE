@@ -38,7 +38,7 @@ def render(entornos_activos):
 
 
 # ==============================================================================
-# El caso real: eve-monitor con sus 3 puertos (el mismo que probamos con nmap)
+# The real case: eve-monitor with its 3 ports
 # ==============================================================================
 
 def test_eve_monitor_ports_generate_accept_on_both_tunnels():
@@ -73,7 +73,7 @@ def test_undeclared_port_never_gets_a_rule():
 
 
 # ==============================================================================
-# El fallback del template: 'firewall_externo | default([])'
+# The template's fallback: 'firewall_externo | default([])'
 # ==============================================================================
 
 def test_resource_without_firewall_externo_gets_no_rule_and_does_not_crash():
@@ -81,14 +81,14 @@ def test_resource_without_firewall_externo_gets_no_rule_and_does_not_crash():
         "nombre": "doom-gateway",
         "estado": "presente",
         "red": {"ip": "192.168.1.30/24"},
-        # sin 'firewall_externo' — el template debe usar el default([]) y no tronar
+        # no 'firewall_externo' — the template must use the default([]) and not crash
     }]
     output = render(entornos)
     assert "-d 192.168.1.30 -p" not in output
 
 
 # ==============================================================================
-# Recursos 'ausente' deben ignorarse por completo
+# 'ausente' resources must be skipped entirely
 # ==============================================================================
 
 def test_ausente_resource_is_skipped_entirely():
@@ -103,7 +103,7 @@ def test_ausente_resource_is_skipped_entirely():
 
 
 # ==============================================================================
-# Múltiples recursos: cada uno con sus propias reglas, sin contaminarse entre sí
+# Multiple resources: each with its own rules, without leaking into each other
 # ==============================================================================
 
 def test_multiple_resources_do_not_leak_rules_into_each_other():
@@ -129,9 +129,9 @@ def test_multiple_resources_do_not_leak_rules_into_each_other():
 
 
 # ==============================================================================
-# El catch-all final: debe existir y debe ir DESPUÉS de las reglas dinámicas
-# (si esto se rompe, el allowlist queda "decorativo", como dice el propio
-# comentario del template).
+# The final catch-all: must exist and must come AFTER the dynamic rules
+# (if this breaks, the allowlist becomes "decorative", as the template's
+# own comment says).
 # ==============================================================================
 
 def test_catch_all_drop_exists_after_dynamic_rules():
@@ -144,7 +144,7 @@ def test_catch_all_drop_exists_after_dynamic_rules():
     output = render(entornos)
     accept_idx = output.index("--dport 22 -j ACCEPT")
     dropall_idx = output.rindex("iptables -A FORWARD -j DROP")
-    assert dropall_idx > accept_idx, "El catch-all DROP debe ir después de las reglas dinámicas"
+    assert dropall_idx > accept_idx, "The catch-all DROP must come after the dynamic rules"
 
 
 def test_default_policies_are_drop_drop_accept():
@@ -155,8 +155,8 @@ def test_default_policies_are_drop_drop_accept():
 
 
 # ==============================================================================
-# Regresión directa del protocolo inválido: si algún día el YAML permite
-# protocolos raros, el template no debe generar '-p ' vacío o mal formado.
+# Direct regression for invalid protocol: if the YAML ever allows unusual
+# protocols, the template must not generate an empty or malformed '-p '.
 # ==============================================================================
 
 def test_protocol_and_port_are_interpolated_literally():

@@ -1,8 +1,8 @@
 ---
 # ==============================================================================
-# PLAY 1: Cargar el SSOT y crear el Inventario Multimodal (SDDC)
+# PLAY 1: Load the SSOT and build the Multimodal Inventory (SDDC)
 # ==============================================================================
-- name: "Fase 1: Generar Inventario Dinámico Multimodal desde SSOT"
+- name: "Phase 1: Generate Dynamic Multimodal Inventory from SSOT"
   hosts: localhost
   connection: local
   gather_facts: false
@@ -11,19 +11,19 @@
     path_to_contract: "{{ playbook_dir }}/../../lab-state.yaml"
 
   tasks:
-    - name: "1.1 Leer el contrato maestro (lab-state.yaml)"
+    - name: "1.1 Read the master contract (lab-state.yaml)"
       ansible.builtin.include_vars:
         file: "{{ path_to_contract }}"
         name: contrato
 
-    - name: "1.2 Clasificar hosts y evadir SSH Fingerprint"
+    - name: "1.2 Classify hosts and bypass SSH Fingerprint"
       ansible.builtin.add_host:
         name: "{{ item.nombre }}"
         groups:
           - "eve_dynamic_nodes"
           - "type_{{ item.tipo | default('vm') }}"
         ansible_host: "{{ item.red.ip.split('/')[0] }}"
-        # Si es VM usa 'admin', si es LXC usa 'root'
+        # If it's a VM use 'admin', if it's an LXC use 'root'
         ansible_user: "{{ 'admin' if (item.tipo | default('vm')) == 'vm' else 'root' }}"
         ansible_ssh_private_key_file: "~/.ssh/eve_admin"
         ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o CheckHostIP=no"
@@ -33,9 +33,9 @@
         - item.tipo in ['vm', 'lxc']
 
 # ==============================================================================
-# PLAY 2: Configuración Base (Distribuida por tipos)
+# PLAY 2: Base Configuration (Distributed by type)
 # ==============================================================================
-- name: "Fase 2: Ejecución de Configuración Base"
+- name: "Phase 2: Base Configuration Execution"
   hosts: type_vm:type_lxc
   become: yes
   gather_facts: false
@@ -44,11 +44,11 @@
     lab_state: "{{ lookup('file', '../../lab-state.yaml') | from_yaml }}"
 
   pre_tasks:
-    - name: "Esperar a que el host acepte SSH real (sin depender de Python)"
-      # OJO: wait_for_connection usa internamente el módulo 'ping', que
-      # requiere Python en el remoto. Eso rompe Alpine porque Python aún
-      # no está instalado en este punto — dependencia circular. 'raw' no
-      # necesita intérprete, así que sirve como chequeo previo real.
+    - name: "Wait for the host to accept a real SSH connection (without depending on Python)"
+      # NOTE: wait_for_connection internally uses the 'ping' module, which
+      # requires Python on the remote host. That breaks Alpine because Python
+      # isn't installed yet at this point — a circular dependency. 'raw'
+      # doesn't need an interpreter, so it works as a real pre-flight check.
       ansible.builtin.raw: echo ready
       register: ssh_ready
       retries: 12
@@ -56,7 +56,7 @@
       until: ssh_ready is succeeded
       changed_when: false
 
-    - name: "Bootstrap: Instalar Python en Alpine (vía RAW, con reintentos reales)"
+    - name: "Bootstrap: Install Python on Alpine (via RAW, with real retries)"
       ansible.builtin.raw: apk update && apk add --no-cache python3 && which python3
       register: bootstrap_result
       retries: 5
@@ -66,11 +66,11 @@
       when:
         - "'type_lxc' in group_names"
 
-    - name: "Recolectar Facts ahora que Python existe"
+    - name: "Gather Facts now that Python exists"
       ansible.builtin.setup:
 
   tasks:
-    - name: "2.0 Determinar si el monitoreo está habilitado"
+    - name: "2.0 Determine whether monitoring is enabled"
       set_fact:
         is_monitored: >-
           {{ lab_state.entornos
@@ -79,12 +79,12 @@
              | map(attribute='monitor_enabled')
              | first | default(false) }}
 
-    - name: "2.1 Test de Conexión (Sin Sudo)"
+    - name: "2.1 Connection Test (No Sudo)"
       ansible.builtin.ping:
       become: no
 
-    # --- LÓGICA MULTI-OS ---
-    - name: "2.2 Actualizar repositorios y sistema (Debian)"
+    # --- MULTI-OS LOGIC ---
+    - name: "2.2 Update repositories and system (Debian)"
       ansible.builtin.apt:
         update_cache: yes
         upgrade: dist
@@ -94,7 +94,7 @@
       delay: 15
       until: apt_result is succeeded
 
-    - name: "2.2 Actualizar repositorios y sistema (Alpine)"
+    - name: "2.2 Update repositories and system (Alpine)"
       community.general.apk:
         update_cache: yes
         upgrade: yes
@@ -104,7 +104,7 @@
       delay: 15
       until: apk_result is succeeded
 
-    - name: "2.3 Instalar dependencias globales"
+    - name: "2.3 Install global dependencies"
       ansible.builtin.package:
         name:
           - curl
@@ -113,14 +113,14 @@
           - htop
         state: present
 
-    # --- EXCLUSIVO PARA VMs ---
-    - name: "2.4 Instalar y habilitar QEMU Guest Agent (SOLO VMs)"
+    # --- VM-ONLY ---
+    - name: "2.4 Install and enable QEMU Guest Agent (VMs ONLY)"
       block:
-        - name: "Instalar QEMU Agent"
+        - name: "Install QEMU Agent"
           ansible.builtin.apt:
             name: qemu-guest-agent
             state: present
-        - name: "Iniciar servicio QEMU Agent"
+        - name: "Start QEMU Agent service"
           ansible.builtin.systemd:
             name: qemu-guest-agent
             state: started
@@ -129,14 +129,14 @@
         - "'type_vm' in group_names"
         - "ansible_os_family == 'Debian'"
 
-    # --- MONITOREO (respeta monitor_enabled del lab-state.yaml) ---
-    - name: "2.5 Instalar Node Exporter"
+    # --- MONITORING (respects monitor_enabled from lab-state.yaml) ---
+    - name: "2.5 Install Node Exporter"
       ansible.builtin.package:
         name: "prometheus-node-exporter"
         state: present
       when: is_monitored | default(false) | bool
 
-    - name: "2.6 Asegurar que Node Exporter esté corriendo"
+    - name: "2.6 Ensure Node Exporter is running"
       ansible.builtin.service:
         # Debian -> prometheus-node-exporter
         # Alpine -> node-exporter

@@ -1,23 +1,23 @@
 # terraform/main.tf
 
-# 1. Leer el Contrato Maestro (Single Source of Truth)
+# 1. Read the Master Contract (Single Source of Truth)
 locals {
   lab_state = yamldecode(file("../lab-state.yaml"))
 
-  # Filtramos VMs activas
+  # Filter active VMs
   active_vms = {
     for env in local.lab_state.entornos : env.nombre => env
     if env.estado == "presente" && try(env.tipo, "vm") == "vm"
   }
 
-  # Filtramos LXCs activos
+  # Filter active LXCs
   active_lxcs = {
     for env in local.lab_state.entornos : env.nombre => env
     if env.estado == "presente" && try(env.tipo, "vm") == "lxc"
   }
 }
 
-# 2. Generador de contraseñas aleatorias para los LXC (Seguridad Zero-Touch)
+# 2. Random password generator for LXCs (Zero-Touch Security)
 resource "random_password" "lxc_password" {
   for_each = local.active_lxcs
   length   = 16
@@ -25,7 +25,7 @@ resource "random_password" "lxc_password" {
 }
 
 # ==============================================================================
-# RECURSO 1: VIRTUAL MACHINES (KVM)
+# RESOURCE 1: VIRTUAL MACHINES (KVM)
 # ==============================================================================
 resource "proxmox_vm_qemu" "entorno_vm" {
   for_each = local.active_vms
@@ -59,7 +59,7 @@ resource "proxmox_vm_qemu" "entorno_vm" {
     format   = "raw"
   }
 
-  # Cloud-init — también como bloque legacy disk{} para consistencia con Telmate
+  # Cloud-init — also as a legacy disk{} block for consistency with Telmate
   disk {
     slot    = "ide2"
     type    = "cloudinit"
@@ -76,17 +76,17 @@ resource "proxmox_vm_qemu" "entorno_vm" {
   ipconfig0 = "ip=${each.value.red.ip},gw=${each.value.red.gateway}"
   ciuser    = "admin"
 
-  # DNS explícito — no dependemos de lo que Proxmox tenga configurado por defecto
+  # Explicit DNS — we don't rely on whatever Proxmox has configured by default
   nameserver = "1.1.1.1 8.8.8.8"
 
   sshkeys = <<EOF
 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM9kG6lsmZBCtkdYOAIZwNJ5foJRHrRItjpNlQYrX4zT admin@eve
 EOF
 
-  # Terraform no marca el recurso como "listo" hasta que SSH responde de verdad.
-  # Esto elimina el race condition entre "creado en Proxmox" y "OS realmente arriba".
+  # Terraform doesn't mark the resource as "ready" until SSH actually responds.
+  # This eliminates the race condition between "created in Proxmox" and "OS actually up".
   provisioner "remote-exec" {
-    inline = ["echo 'VM lista — SSH y cloud-init confirmados'"]
+    inline = ["echo 'VM ready — SSH and cloud-init confirmed'"]
 
     connection {
       type        = "ssh"
@@ -109,7 +109,7 @@ EOF
 }
 
 # ==============================================================================
-# RECURSO 2: LINUX CONTAINERS (LXC)
+# RESOURCE 2: LINUX CONTAINERS (LXC)
 # ==============================================================================
 resource "proxmox_lxc" "entorno_lxc" {
   for_each = local.active_lxcs
@@ -118,15 +118,15 @@ resource "proxmox_lxc" "entorno_lxc" {
   target_node = each.value.nodo_proxmox
   vmid        = each.value.vmid
 
-  # Usamos nuestro nuevo Golden Template si es Alpine
+  # We use our new Golden Template if it's Alpine
   ostype     = each.value.os == "alpine" ? "alpine" : "debian"
   ostemplate = each.value.os == "alpine" ? "local:vztmpl/alpine-eve-custom.tar.zst" : "local:vztmpl/debian-12-standard_12.12-1_amd64.tar.zst"
 
   unprivileged = true
   password     = random_password.lxc_password[each.key].result
 
-  # DNS explícito — la imagen custom de Alpine NO trae resolv.conf embebido,
-  # así que dependía por completo del fallback del nodo Proxmox. Ya no.
+  # Explicit DNS — the custom Alpine image does NOT ship resolv.conf,
+  # so it used to depend entirely on the Proxmox node's fallback. Not anymore.
   nameserver = "1.1.1.1 8.8.8.8"
 
   ssh_public_keys = <<EOF
@@ -136,14 +136,14 @@ resource "proxmox_lxc" "entorno_lxc" {
   cores  = each.value.recursos.cores
   memory = each.value.recursos.memoria
 
-  # Disco Principal (Root)
+  # Primary Disk (Root)
   rootfs {
     storage = try(each.value.efimero, false) && each.value.nodo_proxmox == "makima" ? "hdd_data" : "local-zfs"
     size    = "${each.value.recursos.disco}G"
   }
 
-  # Disco de Datos (Opcional - Solo si existe en el YAML)
-  # Usamos un bloque dinámico para que no falle si el LXC no tiene disco_datos
+  # Data Disk (Optional - only if present in the YAML)
+  # Uses a dynamic block so it doesn't fail if the LXC has no disco_datos
   dynamic "mountpoint" {
     for_each = lookup(each.value.recursos, "disco_datos", null) != null ? [1] : []
     content {
@@ -169,10 +169,10 @@ resource "proxmox_lxc" "entorno_lxc" {
   # Start on boot
   start = true
 
-  # Igual que en la VM: Terraform bloquea el apply hasta que SSH responda.
-  # Root, porque así lo define ansible/node-config/setup_base.yml para tipo_lxc.
+  # Same as the VM: Terraform blocks the apply until SSH responds.
+  # Root, because that's what ansible/node-config/setup_base.yml defines for LXC.
   provisioner "remote-exec" {
-    inline = ["echo 'LXC listo — SSH confirmado'"]
+    inline = ["echo 'LXC ready — SSH confirmed'"]
 
     connection {
       type        = "ssh"

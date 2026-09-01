@@ -8,7 +8,7 @@ terraform {
 }
 
 provider "proxmox" {
-  # Las credenciales y la URL se inyectan automáticamente desde SOPS
-  # a través de las variables de entorno PM_API_URL, PM_API_TOKEN_ID, etc.
+  # Credentials and URL are injected automatically from SOPS via
+  # environment variables PM_API_URL, PM_API_TOKEN_ID, etc.
   pm_tls_insecure = true
 }

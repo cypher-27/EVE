@@ -12,7 +12,7 @@ on:
         options:
           - ephemeral       # Only efimero: true resources
           - full-lab        # All non-core resources
-      confirmacion:
+      confirmation:
         description: 'Type "DESTROY" to confirm'
         required: true
         default: ''
@@ -37,7 +37,7 @@ jobs:
       - name: Validate confirmation
         if: github.event_name == 'workflow_dispatch'
         run: |
-          if [[ "${{ github.event.inputs.confirmacion }}" != "DESTROY" ]]; then
+          if [[ "${{ github.event.inputs.confirmation }}" != "DESTROY" ]]; then
             echo "❌ Invalid confirmation. Type 'DESTROY' to proceed."
             exit 1
           fi
@@ -76,7 +76,7 @@ jobs:
             --data-urlencode "text=${MSG}" \
             -d parse_mode="Markdown" > /dev/null
 
-      # ── Capa 2: Pre-flight VPN check ──────────────────────────────
+      # ── Layer 2: Pre-flight VPN check ──────────────────────────────
       - name: Pre-flight VPN check
         run: |
           PROXMOX_ZT_IP="10.1.1.1"
@@ -92,7 +92,7 @@ jobs:
           echo "⚠️ ZeroTier link still down after $MAX_RETRIES attempts. Proceeding anyway — post-mortem will catch it if it fails."
           exit 0
 
-      # ── Capa 3: Destroy con clasificacion de error ────────────────
+      # ── Layer 3: Destroy with error classification ────────────────
       - name: Destroy targets
         id: destroy
         run: |
@@ -121,7 +121,7 @@ jobs:
           TF_VAR_eve_env: "main"
           QUIET_NOTIFY: "true"   # workflow is the single source of truth for janitor notifications
 
-      # ── Capa 3: Remediacion si fue fallo de conectividad ──────────
+      # ── Layer 3: Remediation if it was a connectivity failure ──────────
       - name: Attempt VPN remediation
         if: failure() && env.connectivity_failure == 'true'
         run: |
@@ -144,10 +144,10 @@ jobs:
             MSG="✅ *JANITOR*: Cleanup complete"
           elif [[ "${{ env.connectivity_failure }}" == "true" ]]; then
             if [[ "${{ env.vpn_restored }}" == "true" ]]; then
-              MSG=$(printf '⚠️ *JANITOR*: Fallo por VPN caída en `%s` (no route to host).\n🔧 ZeroTier restaurado automáticamente — puedes relanzar el workflow manualmente.\n%s/%s/actions/runs/%s' \
+              MSG=$(printf '⚠️ *JANITOR*: Failure due to VPN outage on `%s` (no route to host).\n🔧 ZeroTier automatically restored — you can manually relaunch the workflow.\n%s/%s/actions/runs/%s' \
                 "${{ env.failed_target }}" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
             else
-              MSG=$(printf '❌ *JANITOR*: Fallo por VPN caída en `%s` y la remediación automática NO funcionó. Revisa manualmente.\n%s/%s/actions/runs/%s' \
+              MSG=$(printf '❌ *JANITOR*: Failure due to VPN outage on `%s` and automatic remediation did NOT work. Check manually.\n%s/%s/actions/runs/%s' \
                 "${{ env.failed_target }}" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
             fi
           else

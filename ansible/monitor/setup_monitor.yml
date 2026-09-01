@@ -1,14 +1,14 @@
-## Fase 1
-- name: "Fase 1: Descubrimiento de Nodos para el Espejo"
+## Phase 1
+- name: "Phase 1: Node Discovery for the Mirror"
   hosts: localhost
   connection: local
   tasks:
-    - name: "Leer contrato maestro"
+    - name: "Read master contract"
       include_vars:
         file: "../../lab-state.yaml"
         name: contrato
 
-    - name: "Poblar inventario dinámico"
+    - name: "Populate dynamic inventory"
       add_host:
         name: "{{ item.nombre }}"
         groups: "{{ 'eve_monitor_group' if item.nombre == 'eve-monitor' else 'targets_to_monitor' }}"
@@ -19,28 +19,28 @@
       loop: "{{ contrato.entornos }}"
       when: item.estado == 'presente' and item.tipo in ['vm', 'lxc']
 
-## Fase 2
-- name: "Fase 2.6: Configuración del Espejo (Observabilidad)"
+## Phase 2
+- name: "Phase 2.6: Mirror Configuration (Observability)"
   hosts: eve-monitor
   become: yes
   gather_facts: true
 
   vars:
-    secretos: "{{ lookup('community.sops.sops', '../../secrets.enc.yaml') | from_yaml }}"
+    secrets: "{{ lookup('community.sops.sops', '../../secrets.enc.yaml') | from_yaml }}"
 
   tasks:
-    - name: "0. Leer contrato para el Scrape (lab_state)"
+    - name: "0. Read contract for the Scrape config (lab_state)"
       ansible.builtin.include_vars:
         file: "../../lab-state.yaml"
         name: lab_state
 
-    - name: "1. Instalar VictoriaMetrics y Grafana"
+    - name: "1. Install VictoriaMetrics and Grafana"
       community.general.apk:
         name: [victoria-metrics, grafana]
         update_cache: yes
         state: present
 
-    - name: "2. FIX: Crear directorios de Victoria y Grafana"
+    - name: "2. Create Victoria and Grafana directories"
       ansible.builtin.file:
         path: "{{ item.path }}"
         state: directory
@@ -52,7 +52,7 @@
         - { path: '/var/lib/grafana/provisioning/datasources', owner: 'grafana', group: 'grafana' }
         - { path: '/var/lib/grafana/provisioning/dashboards', owner: 'grafana', group: 'grafana' }
 
-    - name: "3. Generar Archivos de Configuración de VictoriaMetrics"
+    - name: "3. Generate VictoriaMetrics Configuration Files"
       ansible.builtin.template:
         src: "{{ item.src }}"
         dest: "{{ item.dest }}"
@@ -64,25 +64,25 @@
         - { src: 'victoria-metrics-opts.j2', dest: '/etc/conf.d/victoria-metrics' }
       notify: Restart VictoriaMetrics
 
-    - name: "4. Inyectar Password de Grafana"
+    - name: "4. Inject Grafana Password"
       ansible.builtin.lineinfile:
         path: /etc/grafana.ini
         regexp: '^;admin_password ='
-        # Usamos el objeto 'secretos' cargado desde el YAML cifrado
-        line: "admin_password = {{ secretos.grafana_admin_password }}"
+        # We use the 'secrets' object loaded from the encrypted YAML
+        line: "admin_password = {{ secrets.grafana_admin_password }}"
         owner: "root"
         group: "grafana"
         mode: "0640"
       no_log: true
 
-    - name: "4.1 Forzar a Grafana a escuchar en todas las interfaces"
+    - name: "4.1 Force Grafana to listen on all interfaces"
       ansible.builtin.lineinfile:
         path: /etc/conf.d/grafana
         regexp: '127.0.0.1'
         line: 'grafana_opts="--cfg:server.http_addr=0.0.0.0"'
       notify: Restart Grafana
 
-    - name: "5. Inyectar Data Source (Ruta de Alpine)"
+    - name: "5. Inject Data Source (Alpine Path)"
       ansible.builtin.copy:
         dest: /var/lib/grafana/provisioning/datasources/victoria-metrics.yaml
         content: |
@@ -99,7 +99,7 @@
         mode: '0640'
       notify: Restart Grafana
 
-    - name: "6. Configurar el Provider de Dashboards (Ruta de Alpine)"
+    - name: "6. Configure Dashboards Provider (Alpine Path)"
       ansible.builtin.template:
         src: dashboard-provider.yml.j2
         dest: /var/lib/grafana/provisioning/dashboards/eve-provider.yaml
@@ -108,7 +108,7 @@
         mode: '0640'
       notify: Restart Grafana
 
-    - name: "7. Inyectar JSON del Dashboard Maestro"
+    - name: "7. Inject Master Dashboard JSON"
       ansible.builtin.copy:
         src: files/node-exporter-dash.json
         dest: /var/lib/grafana/provisioning/dashboards/node-exporter-dash.json
@@ -117,14 +117,14 @@
         mode: '0640'
       notify: Restart Grafana
 
-    - name: "7.5 FIX: Mutilar 'command_user' para forzar Root (Bug Alpine LXC)"
+    - name: "7.5 Mutilate 'command_user' to force Root (Alpine LXC Bug)"
       ansible.builtin.lineinfile:
         path: /etc/init.d/victoria-metrics
         regexp: '^command_user='
-        line: '#command_user=victoriametrics:victoriametrics # Mutilado por EVE para forzar Root'
+        line: '#command_user=victoriametrics:victoriametrics # Mutilated by EVE to force Root'
       notify: Restart VictoriaMetrics
 
-    - name: "8. Iniciar y habilitar servicios"
+    - name: "8. Start and enable services"
       ansible.builtin.service:
         name: "{{ item }}"
         state: started

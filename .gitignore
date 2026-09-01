@@ -2,8 +2,8 @@
 # EVE MONO-REPO - GITIGNORE (Hardened)
 # ==========================================
 
-# --- [ 1. SECRETOS Y SEGURIDAD ] ---
-# Bloqueamos todo lo que huela a texto plano
+# --- [ 1. SECRETS & SECURITY ] ---
+# Block anything that smells like plaintext
 *.env
 *.tfvars
 *.tfvars.json
@@ -15,12 +15,12 @@ auth.tf
 .sops/
 age.key
 
-# EXCEPCIONES: Archivos encriptados que SÍ deben ir al repo
+# EXCEPTIONS: Encrypted files that SHOULD be committed
 !secrets.enc.yaml
 !.sops.yaml
 
 # --- [ 2. TERRAFORM ] ---
-# Directorios de plugins y estados locales
+# Plugin directories and local state files
 .terraform/
 .terraform.lock.hcl
 *.tfstate
@@ -28,13 +28,13 @@ age.key
 crash.log
 
 # --- [ 3. ANSIBLE ] ---
-# Logs y archivos temporales de ejecución
+# Logs and temporary execution files
 *.log
 *.retry
 ansible.log
 .ansible_cache/
 
-# --- [ 4. SISTEMA Y EDITORES ] ---
+# --- [ 4. SYSTEM & EDITORS ] ---
 .DS_Store
 Thumbs.db
 core
@@ -43,8 +43,8 @@ core
 .vscode/
 .idea/
 
-# --- [ 5. OTROS ] ---
-# Archivos temporales de despliegue
+# --- [ 5. OTHER ] ---
+# Temporary deployment files
 dist/
 build/
 

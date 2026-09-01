@@ -1,15 +1,15 @@
 # ==========================================
-# EVE - YAML de prueba para validator.py v2 (modo agregado)
-# Cada bloque dispara UNA regla específica. Corre:
-#   python3 validator.py
-# apuntando este archivo como lab-state.yaml (o cambia el nombre
-# en validate() temporalmente / usa un symlink) y confirma que
-# TODOS los errores listados abajo aparecen juntos en una sola corrida.
+# EVE - Stress-test fixture for validator.collect_errors()
+# Each block below triggers ONE specific validation rule. Loaded
+# automatically by tests/test_validator.py
+# (test_full_stress_fixture_matches_expected_error_count), which
+# asserts all 24 errors below appear together in a single
+# collect_errors() call.
 # ==========================================
 
 entornos:
 
-  # === INFRAESTRUCTURA CORE (necesaria para que gateway_ips no quede vacío) ===
+  # === CORE INFRASTRUCTURE (needed so gateway_ips isn't empty) ===
   - nombre: "doom-gateway"
     estado: "presente"
     tipo: "gateway"
@@ -31,7 +31,7 @@ entornos:
     red:
       ip: "192.168.1.10/24"
 
-  # === CASO 1: IP fuera de rango (.41-.63) ===
+  # === CASE 1: IP out of range (.41-.63) ===
   - nombre: "stress-ip-range"
     estado: "presente"
     tipo: "vm"
@@ -41,7 +41,7 @@ entornos:
     red: { ip: "192.168.1.101/24", gateway: "192.168.1.30" }
     recursos: { cores: 1, memoria: 512, disco: 11 }
 
-  # === CASO 2: IP duplicada (mismo .50 en ambos) ===
+  # === CASE 2: Duplicate IP (same .50 on both) ===
   - nombre: "stress-dup-ip-a"
     estado: "presente"
     tipo: "lxc"
@@ -60,7 +60,7 @@ entornos:
     red: { ip: "192.168.1.50/24", gateway: "192.168.1.30" }
     recursos: { cores: 1, memoria: 256, disco: 2 }
 
-  # === CASO 3: VMID duplicado (600 en ambos) ===
+  # === CASE 3: Duplicate VMID (600 on both) ===
   - nombre: "stress-dup-vmid-a"
     estado: "presente"
     tipo: "lxc"
@@ -79,7 +79,7 @@ entornos:
     red: { ip: "192.168.1.42/24", gateway: "192.168.1.30" }
     recursos: { cores: 1, memoria: 256, disco: 2 }
 
-  # === CASO 4: storage no existe en el nodo (hdd_data en reze) ===
+  # === CASE 4: Storage pool doesn't exist on the node (hdd_data on reze) ===
   - nombre: "stress-storage-missing"
     estado: "presente"
     tipo: "lxc"
@@ -93,7 +93,7 @@ entornos:
       disco: 2
       disco_datos: { storage: "hdd_data", size: "5G", mp: "/data" }
 
-  # === CASO 5: formato de tamaño inválido (2T, no soporta T) ===
+  # === CASE 5: Invalid size format (2T, T unit not supported) ===
   - nombre: "stress-bad-size"
     estado: "presente"
     tipo: "lxc"
@@ -107,7 +107,7 @@ entornos:
       disco: 2
       disco_datos: { storage: "hdd_data", size: "2T", mp: "/data" }
 
-  # === CASO 6: LXC sin campo 'os' ===
+  # === CASE 6: LXC missing 'os' field ===
   - nombre: "stress-missing-os"
     estado: "presente"
     tipo: "lxc"
@@ -116,7 +116,7 @@ entornos:
     red: { ip: "192.168.1.45/24", gateway: "192.168.1.30" }
     recursos: { cores: 1, memoria: 256, disco: 4 }
 
-  # === CASO 7: disco insuficiente para el OS (debian min 4G) ===
+  # === CASE 7: Disk too small for the OS (debian min 4G) ===
   - nombre: "stress-small-disk-os"
     estado: "presente"
     tipo: "lxc"
@@ -126,7 +126,7 @@ entornos:
     red: { ip: "192.168.1.46/24", gateway: "192.168.1.30" }
     recursos: { cores: 1, memoria: 256, disco: 2 }
 
-  # === CASO 8: disco menor al mínimo de la plantilla (debian13-template = 11G) ===
+  # === CASE 8: Disk smaller than the template's minimum (debian13-template = 11G) ===
   - nombre: "stress-small-disk-template"
     estado: "presente"
     tipo: "vm"
@@ -136,7 +136,7 @@ entornos:
     red: { ip: "192.168.1.47/24", gateway: "192.168.1.30" }
     recursos: { cores: 1, memoria: 512, disco: 10 }
 
-  # === CASO 9: RAM y CPU overbooking (un solo recurso, disparo ambos) ===
+  # === CASE 9: RAM and CPU overbooking (single resource triggers both) ===
   - nombre: "stress-ram-cpu-blowout"
     estado: "presente"
     tipo: "vm"
@@ -146,7 +146,7 @@ entornos:
     red: { ip: "192.168.1.48/24", gateway: "192.168.1.30" }
     recursos: { cores: 50, memoria: 20000, disco: 12 }
 
-  # === CASO 10: presupuesto de RAM efímera excedido (cap 2048MB) ===
+  # === CASE 10: Ephemeral RAM budget exceeded (cap 2048MB) ===
   - nombre: "stress-ephemeral-ram"
     estado: "presente"
     tipo: "vm"
@@ -157,7 +157,7 @@ entornos:
     red: { ip: "192.168.1.49/24", gateway: "192.168.1.30" }
     recursos: { cores: 1, memoria: 3000, disco: 12 }
 
-  # === CASO 11 (fix #3): estado con typo, no es 'presente' ni 'ausente' ===
+  # === CASE 11: estado has a typo, neither 'presente' nor 'ausente' ===
   - nombre: "stress-bad-estado"
     estado: "reiniciando"
     tipo: "lxc"
@@ -167,7 +167,7 @@ entornos:
     red: { ip: "192.168.1.51/24", gateway: "192.168.1.30" }
     recursos: { cores: 1, memoria: 256, disco: 2 }
 
-  # === CASO 12 (fix #3): gateway no coincide con ningún nodo tipo:gateway ===
+  # === CASE 12: gateway doesn't match any tipo:gateway node ===
   - nombre: "stress-bad-gateway"
     estado: "presente"
     tipo: "lxc"
@@ -177,7 +177,7 @@ entornos:
     red: { ip: "192.168.1.52/24", gateway: "192.168.1.99" }
     recursos: { cores: 1, memoria: 256, disco: 2 }
 
-  # === CASO 13: formato de IP inválido ===
+  # === CASE 13: Invalid IP format ===
   - nombre: "stress-invalid-ip"
     estado: "presente"
     tipo: "lxc"
@@ -187,7 +187,7 @@ entornos:
     red: { ip: "999.999.999.999/24", gateway: "192.168.1.30" }
     recursos: { cores: 1, memoria: 256, disco: 2 }
 
-  # === CASO 14: nodo Proxmox desconocido ===
+  # === CASE 14: Unknown Proxmox node ===
   - nombre: "stress-unknown-node"
     estado: "presente"
     tipo: "lxc"
@@ -197,7 +197,7 @@ entornos:
     red: { ip: "192.168.1.53/24", gateway: "192.168.1.30" }
     recursos: { cores: 1, memoria: 256, disco: 2 }
 
-  # === CASO 15: falta el bloque 'recursos' completo ===
+  # === CASE 15: Missing the entire 'recursos' block ===
   - nombre: "stress-missing-recursos"
     estado: "presente"
     tipo: "vm"
@@ -206,7 +206,7 @@ entornos:
     plantilla: "debian13-template"
     red: { ip: "192.168.1.54/24", gateway: "192.168.1.30" }
 
-  # === CASO 16: VM sin campo 'plantilla' ===
+  # === CASE 16: VM missing 'plantilla' field ===
   - nombre: "stress-vm-no-plantilla"
     estado: "presente"
     tipo: "vm"
@@ -215,7 +215,7 @@ entornos:
     red: { ip: "192.168.1.55/24", gateway: "192.168.1.30" }
     recursos: { cores: 1, memoria: 512, disco: 12 }
 
-  # === CASO 17: LXC sin 'vmid' ===
+  # === CASE 17: LXC missing 'vmid' ===
   - nombre: "stress-lxc-no-vmid"
     estado: "presente"
     tipo: "lxc"
@@ -224,7 +224,7 @@ entornos:
     red: { ip: "192.168.1.56/24", gateway: "192.168.1.30" }
     recursos: { cores: 1, memoria: 256, disco: 2 }
 
-  # === CASO 18: plantilla de VM desconocida (no registrada en LIMITS) ===
+  # === CASE 18: Unknown VM template (not registered in LIMITS) ===
   - nombre: "stress-unknown-template"
     estado: "presente"
     tipo: "vm"
@@ -234,7 +234,7 @@ entornos:
     red: { ip: "192.168.1.57/24", gateway: "192.168.1.30" }
     recursos: { cores: 1, memoria: 512, disco: 20 }
 
-  # === CASO 19: protocolo de firewall inválido ===
+  # === CASE 19: Invalid firewall protocol ===
   - nombre: "stress-invalid-protocol"
     estado: "presente"
     tipo: "lxc"
@@ -244,9 +244,9 @@ entornos:
     red: { ip: "192.168.1.58/24", gateway: "192.168.1.30" }
     recursos: { cores: 1, memoria: 256, disco: 2 }
     firewall_externo:
-      - { puerto: 22, protocolo: "icmp", descripcion: "SSH mal declarado" }
+      - { puerto: 22, protocolo: "icmp", descripcion: "Badly declared SSH" }
 
-  # === CASO 20: puerto fuera de rango válido ===
+  # === CASE 20: Port outside the valid range ===
   - nombre: "stress-invalid-port"
     estado: "presente"
     tipo: "lxc"
@@ -256,9 +256,9 @@ entornos:
     red: { ip: "192.168.1.59/24", gateway: "192.168.1.30" }
     recursos: { cores: 1, memoria: 256, disco: 2 }
     firewall_externo:
-      - { puerto: 99999, protocolo: "tcp", descripcion: "Puerto imposible" }
+      - { puerto: 99999, protocolo: "tcp", descripcion: "Impossible port" }
 
-  # === CASO 21: pide monitoreo, pero eve-monitor no está declarado 'presente' ===
+  # === CASE 21: Requests monitoring, but eve-monitor isn't declared 'presente' ===
   - nombre: "stress-monitor-request"
     estado: "presente"
     tipo: "lxc"
@@ -269,7 +269,7 @@ entornos:
     red: { ip: "192.168.1.60/24", gateway: "192.168.1.30" }
     recursos: { cores: 1, memoria: 256, disco: 2 }
 
-  # === CASO 22: nombre duplicado (mismo 'nombre' en dos recursos) ===
+  # === CASE 22: Duplicate name (same 'nombre' on two resources) ===
   - nombre: "stress-dup-name"
     estado: "presente"
     tipo: "lxc"
@@ -288,7 +288,7 @@ entornos:
     red: { ip: "192.168.1.63/24", gateway: "192.168.1.30" }
     recursos: { cores: 1, memoria: 256, disco: 2 }
 
-  # === CONTROL: recurso 100% válido, debe pasar sin ningún error ===
+  # === CONTROL: 100% valid resource, must pass with zero errors ===
   - nombre: "stress-valid-control"
     estado: "presente"
     tipo: "lxc"

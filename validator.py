@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-EVE Validator — Enforces cluster topology rules against lab-state.yaml
+EVE Validator — Enforces cluster topology rules against lab-state.yaml.
 
-v3: Core validation logic extracted into collect_errors(entornos), a pure
-function with no I/O and no module-level state, so it can be imported and
-unit-tested with pytest (see tests/test_validator.py). validate() remains
-the CLI entrypoint used by orchestrator.sh — same behavior, same exit codes.
+collect_errors(entornos) is a pure function (no I/O, no module-level state),
+so it can be unit-tested directly (see tests/test_validator.py). validate()
+is the CLI entrypoint invoked by orchestrator.sh.
 """
 import sys
 import yaml
@@ -29,8 +28,8 @@ LIMITS = {
         "debian13-template": 11,
     },
     "lxc_templates": {
-        "alpine":  { "tarball": "alpine-eve-custom.tar.zst",                    "disco_minimo": 2 },
-        "debian":  { "tarball": "debian-12-standard_12.12-1_amd64.tar.zst",     "disco_minimo": 4 },
+        "alpine":  { "tarball": "alpine-eve-custom.tar.zst",                    "min_disk": 2 },
+        "debian":  { "tarball": "debian-12-standard_12.12-1_amd64.tar.zst",     "min_disk": 4 },
     }
 }
 
@@ -189,9 +188,9 @@ def collect_errors(entornos: list) -> ValidationResult:
                     fail(f"LXC '{name}' uses unregistered OS '{os_distro}'. "
                          f"Register it in LIMITS['lxc_templates'] in validator.py")
                     continue
-                if disk_root < lxc_tpl["disco_minimo"]:
+                if disk_root < lxc_tpl["min_disk"]:
                     fail(f"LXC '{name}': disco={disk_root}G is below minimum "
-                         f"for '{os_distro}' ({lxc_tpl['disco_minimo']}G).")
+                         f"for '{os_distro}' ({lxc_tpl['min_disk']}G).")
 
             assigned_pool = "hdd_data" if (is_ephemeral and node == "makima") else "local-zfs"
 

@@ -1,8 +1,8 @@
 """
 Unit + integration tests for validator.collect_errors().
 
-Requires the refactored validator.py (v3) where collect_errors(entornos)
-is a pure function returning a ValidationResult(errors, total_ram, total_cores).
+collect_errors(entornos) is a pure function returning a
+ValidationResult(errors, total_ram, total_cores).
 
 Run with:
     pip install pytest pyyaml

@@ -16,7 +16,7 @@ export ANSIBLE_HOST_KEY_CHECKING=False
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# --- ARGUMENTOS ---
+# --- ARGUMENTS ---
 ACTION="apply"
 FORCE=false
 STAGE="all"
@@ -35,7 +35,7 @@ while [[ "$#" -gt 0 ]]; do
         --stage-all)      STAGE="all"      ;;
         *)
             echo -e "${RED}[ERROR] Unknown argument: $1${NC}"
-            echo "Usage: $0 [--destroy --force] [--plan] [--destroy-target <nombre>]"
+            echo "Usage: $0 [--destroy --force] [--plan] [--destroy-target <name>]"
             echo "       $0 [--stage-validate|--stage-firewall|--stage-infra|--stage-config|--stage-all]"
             exit 1
             ;;
@@ -43,7 +43,7 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-# --- ESTADO DE EJECUCIÓN ---
+# --- EXECUTION STATE ---
 CURRENT_STEP="Initialization"
 IN_PROGRESS=true
 STATE_FILE="/tmp/eve-orchestrator-state-$(whoami).env"
@@ -152,8 +152,8 @@ check_required_files() {
     [ -f "secrets.enc.yaml" ]  || { echo -e "${RED}[ERROR] secrets.enc.yaml not found${NC}";  exit 1; }
 }
 
-# --- VENV (para pytest/checkov, sin tocar el Python del sistema / evitar
-# "externally-managed-environment" en Fedora/Debian recientes) ---
+# --- VENV (for pytest/checkov, without touching the system Python /
+# avoids the "externally-managed-environment" lock on recent Fedora/Debian) ---
 ensure_venv() {
     if [ ! -d ".venv" ]; then
         echo -e "${CYAN}[*] .venv not found — creating it...${NC}"
@@ -366,7 +366,7 @@ if [ "$ACTION" = "destroy-target" ]; then
     terraform_init
 
     # Resolve Terraform address from lab-state.yaml
-    TIPO=$(python3 -c "
+    RESOURCE_TYPE=$(python3 -c "
 import yaml, sys
 with open('lab-state.yaml') as f:
     data = yaml.safe_load(f)
@@ -377,14 +377,14 @@ for e in data.get('entornos', []):
 print('NOT_FOUND'); sys.exit(1)
 " "$TARGET_RESOURCE") || handle_error "Resolve Target" "Resource '$TARGET_RESOURCE' not found in lab-state.yaml"
 
-    if [ "$TIPO" = "vm" ]; then
+    if [ "$RESOURCE_TYPE" = "vm" ]; then
         ADDRESS="proxmox_vm_qemu.entorno_vm[\"$TARGET_RESOURCE\"]"
     else
         ADDRESS="proxmox_lxc.entorno_lxc[\"$TARGET_RESOURCE\"]"
     fi
 
-    echo -e "${CYAN}[*] Destroying $TIPO '$TARGET_RESOURCE' → $ADDRESS${NC}"
-    send_telegram "🧹 Destroying \`$TARGET_RESOURCE\` (\`$TIPO\`)..."
+    echo -e "${CYAN}[*] Destroying $RESOURCE_TYPE '$TARGET_RESOURCE' → $ADDRESS${NC}"
+    send_telegram "🧹 Destroying \`$TARGET_RESOURCE\` (\`$RESOURCE_TYPE\`)..."
 
     cd "$SCRIPT_DIR/terraform"
     destroy_out=$(terraform destroy -auto-approve -target="$ADDRESS" 2>&1) || \

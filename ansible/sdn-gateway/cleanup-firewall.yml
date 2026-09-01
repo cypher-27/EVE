@@ -1,8 +1,8 @@
 ---
 # ==============================================================================
-# PLAY 1: Identificar al Gateway desde el SSOT
+# PLAY 1: Identify the Gateway from the SSOT
 # ==============================================================================
-- name: "Fase 1: Identificar Gateway para Purga"
+- name: "Phase 1: Identify Gateway for Purge"
   hosts: localhost
   connection: local
   gather_facts: false
@@ -11,12 +11,12 @@
     path_to_contract: "{{ playbook_dir }}/../../lab-state.yaml"
 
   tasks:
-    - name: "1.1 Leer el contrato maestro"
+    - name: "1.1 Read the master contract"
       ansible.builtin.include_vars:
         file: "{{ path_to_contract }}"
         name: contrato
 
-    - name: "1.2 Inyectar Gateway al inventario en memoria"
+    - name: "1.2 Inject Gateway into in-memory inventory"
       ansible.builtin.add_host:
         name: "{{ item.nombre }}"
         groups: "gateway_nodes"
@@ -30,9 +30,9 @@
         - item.tipo == "gateway"
 
 # ==============================================================================
-# PLAY 2: Purga Inteligente de Reglas SDN
+# PLAY 2: Smart Purge of SDN Rules
 # ==============================================================================
-- name: "Fase 2: Purga de Reglas SDN (Conservando Físicos)"
+- name: "Phase 2: Purge SDN Rules (Preserving Physical Nodes)"
   hosts: gateway_nodes
   become: yes
 
@@ -44,25 +44,25 @@
     lan_subnet: "192.168.1.0/24"
 
   tasks:
-    - name: "2.1 Leer contrato maestro para filtrar"
+    - name: "2.1 Read master contract to filter"
       ansible.builtin.include_vars:
         file: "{{ playbook_dir }}/../../lab-state.yaml"
         name: contrato
 
-    - name: "2.2 Filtrar únicamente los nodos físicos (Proxmox)"
+    - name: "2.2 Filter only physical nodes (Proxmox)"
       ansible.builtin.set_fact:
         nodos_persistentes: "{{ contrato.entornos | selectattr('tipo', 'defined') | selectattr('tipo', 'equalto', 'fisico') | list }}"
 
-    - name: "2.3 Generar script de Firewall (Limpiando VMs)"
+    - name: "2.3 Generate Firewall script (Cleaning VMs)"
       ansible.builtin.template:
         src: templates/eve-firewall.j2
         dest: /usr/local/bin/eve-firewall.sh
         mode: '0755'
       vars:
-        # Solo pasamos Makima y Reze al template, eliminando las VMs
+        # We only pass Makima and Reze to the template, removing the VMs
         entornos_activos: "{{ nodos_persistentes }}"
 
-    - name: "2.4 Aplicar y Reiniciar Firewall"
+    - name: "2.4 Apply and Restart Firewall"
       ansible.builtin.systemd:
         name: eve-firewall.service
         state: restarted

@@ -4,22 +4,22 @@
 # EVE GATEWAY - SDN FIREWALL (Ansible Managed)
 # ==========================================
 
-# Variables inyectadas por Ansible
+# Variables injected by Ansible
 WG_IFACE="{{ wg_iface }}"
 ZT_IFACE="{{ zt_iface }}"
 LAN_IFACE="{{ lan_iface }}"
 LAN_SUBNET="{{ lan_subnet }}"
 RASP_LAN_IP="{{ rasp_lan_ip }}"
 
-# 1. Limpieza
+# 1. Cleanup
 iptables -F
 iptables -X
 iptables -t nat -F
 iptables -t nat -X
 
-# Fijar politica default a DROP como respaldo — si por alguna razon
-# el script termina antes de llegar al catch-all explicito al final,
-# no queda el sistema abierto por default de Linux (ACCEPT).
+# Set default policy to DROP as a safety net — if for some reason
+# the script exits before reaching the explicit catch-all at the end,
+# the system doesn't stay open due to Linux's default (ACCEPT).
 iptables -P INPUT DROP
 iptables -P FORWARD DROP
 iptables -P OUTPUT ACCEPT
@@ -27,7 +27,7 @@ iptables -P OUTPUT ACCEPT
 # 2. NAT
 iptables -t nat -A POSTROUTING -o $LAN_IFACE -j MASQUERADE
 
-# 3. Reglas INPUT (Seguridad de la Pi)
+# 3. INPUT Rules (Pi Security)
 iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
 iptables -A INPUT -i lo -j ACCEPT
 iptables -A INPUT -i $ZT_IFACE -j ACCEPT
@@ -35,18 +35,18 @@ iptables -A INPUT -p udp --dport 51820 -j ACCEPT
 iptables -A INPUT -p tcp --dport 22 -j ACCEPT
 iptables -A INPUT -j DROP
 
-# 4. Reglas FORWARD (Reenvío)
+# 4. FORWARD Rules (Forwarding)
 iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
 
-# Permitir que la LAN salga a internet vía la interfaz de uplink
+# Allow the LAN to reach the internet via the uplink interface
 iptables -A FORWARD -s $LAN_SUBNET -o $LAN_IFACE -j ACCEPT
 
-# --- ZONA DINÁMICA: GENERADA DESDE LAB-STATE.YAML ---
+# --- DYNAMIC ZONE: GENERATED FROM LAB-STATE.YAML ---
 {% for env in entornos_activos %}
 {% if env.estado == "presente" %}
 
-# Reglas para: {{ env.nombre }} (IP: {{ env.red.ip.split('/')[0] }})
-# Usamos | default([]) para que si no existe 'firewall_externo', no explote
+# Rules for: {{ env.nombre }} (IP: {{ env.red.ip.split('/')[0] }})
+# We use | default([]) so it doesn't blow up if 'firewall_externo' doesn't exist
 {% for rule in env.firewall_externo | default([]) %}
 
 # {{ rule.descripcion | default(rule.protocolo + ':' + rule.puerto | string) }}
@@ -56,17 +56,17 @@ iptables -A FORWARD -i $ZT_IFACE -d {{ env.red.ip.split('/')[0] }} -p {{ rule.pr
 {% endif %}
 {% endfor %}
 
-# --- SEGURIDAD FINAL ---
-# Permitir PING global para monitoreo
+# --- FINAL SECURITY ---
+# Allow global PING for monitoring
 iptables -A FORWARD -p icmp -j ACCEPT
 
-# Bloqueo total al resto de la LAN (Default Drop para VPNs)
+# Total block to the rest of the LAN (Default Drop for VPNs)
 iptables -A FORWARD -i $WG_IFACE -d $LAN_SUBNET -j DROP
 iptables -A FORWARD -i $ZT_IFACE -d $LAN_SUBNET -j DROP
 
-# Catch-all: cualquier cosa no permitida explícitamente arriba, se descarta.
-# (FORWARD policy queda en ACCEPT por default de Linux si no se fija aquí;
-# sin esta línea, la allowlist de arriba es decorativa.)
+# Catch-all: anything not explicitly allowed above gets dropped.
+# (FORWARD policy stays ACCEPT by Linux default if not set here;
+# without this line, the allowlist above is purely decorative.)
 iptables -A FORWARD -j DROP
 
-echo "EVE Firewall: SDN actualizado dinámicamente desde el contrato maestro."
+echo "EVE Firewall: SDN dynamically updated from the master contract."
