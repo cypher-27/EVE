@@ -26,6 +26,7 @@ while [[ "$#" -gt 0 ]]; do
     case $1 in
         --destroy)        ACTION="destroy" ;;
         --plan)           ACTION="plan"    ;;
+	--apply)          ACTION="apply"   ;;
         --force)          FORCE=true       ;;
         --destroy-target)  ACTION="destroy-target"; TARGET_RESOURCE="$2"; shift ;;
         --stage-validate) STAGE="validate" ;;
@@ -35,7 +36,7 @@ while [[ "$#" -gt 0 ]]; do
         --stage-all)      STAGE="all"      ;;
         *)
             echo -e "${RED}[ERROR] Unknown argument: $1${NC}"
-            echo "Usage: $0 [--destroy --force] [--plan] [--destroy-target <name>]"
+            echo "Usage: $0 [--destroy --force] [--plan] [--apply] [--destroy-target <name>]"
             echo "       $0 [--stage-validate|--stage-firewall|--stage-infra|--stage-config|--stage-all]"
             exit 1
             ;;

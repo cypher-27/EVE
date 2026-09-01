@@ -1,16 +1,33 @@
 # EVE — Environment Virtualization Engine
 
-A declarative homelab automation pipeline that provisions and manages virtual machines and LXC containers on a Proxmox cluster, driven entirely by a single source-of-truth YAML manifest — with full CI/CD, secrets management, dynamic SDN firewall, and automated monitoring.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#license)
+[![Terraform](https://img.shields.io/badge/IaC-Terraform-844FBA)]()
+[![Ansible](https://img.shields.io/badge/Config-Ansible-EE0000)]()
+[![Secrets](https://img.shields.io/badge/Secrets-SOPS%20%2B%20Age-2E8B57)]()
+<!-- Once the repo is public and the workflow has run at least once, replace <your-user> below to enable a live CI badge:
+[![CI](https://github.com/<your-user>/EVE/actions/workflows/eve-sanity-check.yml/badge.svg)](https://github.com/<your-user>/EVE/actions) -->
+
+A declarative homelab automation pipeline that provisions and manages virtual machines and LXC containers on a Proxmox cluster, driven entirely by a single source-of-truth YAML manifest — with full CI/CD, encrypted secrets, a dynamic SDN firewall, policy-as-code guardrails, and automated monitoring.
+
+## Highlights
+
+- **Single source of truth**: one YAML file (`lab-state.yaml`) drives Terraform, Ansible, the firewall, and the monitoring stack — no static inventories anywhere in the pipeline.
+- **Security-first secrets**: all credentials encrypted at rest with SOPS + Age; zero plaintext secrets ever committed.
+- **Centralized SDN firewall**: perimeter firewall rules on a Raspberry Pi gateway, generated dynamically from the same contract that provisions infrastructure — no per-VM manual `iptables` editing.
+- **Policy-as-code guardrail**: a custom Checkov check blocks any regression toward per-host firewalling before it ever reaches Proxmox.
+- **Zero Trust access history**: previously exposed via a Cloudflare Zero Trust tunnel with path-scoped bypass policies for WebSocket console traffic — full design preserved even though the demo domain is currently inactive.
+- **Resource-aware by necessity**: built and stress-tested on a genuinely constrained cluster, forcing real engineering trade-offs (Alpine over Debian where possible, VictoriaMetrics over Prometheus, HDD-offload for ephemeral workloads).
+- **Validated, not just built**: drift-resilience and firewall-isolation behavior were verified with real network evidence (`nmap`, `iptables`, `tcpdump`), not just code review.
 
 ## What is EVE
 
 EVE started as a personal challenge: learn Terraform and Ansible not through isolated tutorials, but by building something real that forces them to work together.
 
-The goal was to integrate the entire provisioning lifecycle — infrastructure, configuration, secrets, monitoring, firewall, and CI/CD — while staying within the free tiers of AWS, Cloudflare, and DigitalOcean.
+The goal was to integrate the entire provisioning lifecycle — infrastructure, configuration, secrets, firewall, monitoring, and CI/CD — while staying within the free tiers of AWS, Cloudflare, and DigitalOcean.
 
-The result is a pipeline where a single YAML file is the only interface. You declare what you want, run the orchestrator, and the cluster converges to that state. The validator enforces cluster topology rules before Terraform touches anything. The janitor cleans up ephemeral resources automatically every 24 hours.
+The result is a pipeline where a single YAML file is the only interface. You declare what you want, run the orchestrator, and the cluster converges to that state. The validator enforces cluster topology and resource-quota rules before Terraform touches anything. The janitor cleans up ephemeral resources automatically every 24 hours.
 
-EVE runs on two physical Proxmox nodes with constrained resources (11 vCPUs, 8GB RAM total), which made efficiency a hard requirement rather than a nice-to-have — hence Alpine Linux for lightweight containers, VictoriaMetrics over Prometheus, and storage-aware provisioning that routes ephemeral workloads to HDD pools.
+EVE runs on two physical Proxmox nodes with constrained resources, which made efficiency a hard requirement rather than a nice-to-have — hence Alpine Linux for lightweight containers, VictoriaMetrics over Prometheus, and storage-aware provisioning that routes ephemeral workloads to HDD pools.
 
 ## Architecture
 
@@ -19,7 +36,8 @@ flowchart TD
     A([lab-state.yaml\nSingle Source of Truth])
 
     A --> B[validator.py\nTopology & quota enforcement]
-    B --> C[orchestrator.sh\nMain pipeline]
+    B --> P[Policy-as-Code\nCheckov CKV_EVE_1 + Jinja2 template tests]
+    P --> C[orchestrator.sh\nMain pipeline]
 
     C --> D[terraform/\nVM & LXC provisioning]
     C --> E[ansible/\nPost-provision config]
@@ -27,18 +45,19 @@ flowchart TD
 
     D --> F[(Proxmox Cluster)]
 
-    F --> M[makima\nlocal-zfs 100GB SSD · hdd_data 850GB HDD]
-    F --> R[reze\nlocal-zfs 850GB HDD]
+    F --> M[makima\nlocal-zfs SSD · hdd_data HDD]
+    F --> R[reze\nlocal-zfs HDD]
 
-    E --> GW[doom-gateway\nWireGuard · ZeroTier · HAProxy · iptables SDN]
+    E --> GW[doom-gateway\nWireGuard · ZeroTier · HAProxy Active-Backup · iptables SDN]
     E --> MON[eve-monitor\nVictoriaMetrics · Grafana]
     E --> NODES[node-config\nBase system setup]
 
     GW -->|SDN firewall rules| F
+    GW -->|"HAProxy TCP passthrough (Makima primary / Reze backup)"| F
     MON -->|scrapes| F
 
     VPS[DigitalOcean VPS\nGitHub Actions Runner] -->|ZeroTier| GW
-    GH[GitHub\nlab-state.yaml push] -->|webhook| VPS
+    GH[GitHub\nlab-state.yaml push] -->|manual git pull on VPS| VPS
 ```
 
 ## CI/CD Pipeline
@@ -49,45 +68,55 @@ Three workflows handle the full lifecycle:
 
 | Workflow | Trigger | Description |
 |----------|---------|-------------|
-| `eve-sanity-check` | Push to `main` | Validates toolchain, Age identity, ZeroTier connectivity, and `lab-state.yaml` contract |
-| `eve-deploy` | Manual (`workflow_dispatch`) | Runs the full pipeline: validate → firewall → infra → config |
-| `eve-janitor` | Daily cron + manual | Destroys ephemeral resources; `full-lab` mode requires typing `DESTROY` to confirm |
+| `eve-sanity-check` | Push to `main` (automatic) | Runs the unit test suite, validates toolchain, Age identity, ZeroTier connectivity, and `lab-state.yaml` contract |
+| `eve-deploy` | Manual (`workflow_dispatch`) | Runs either a Terraform-only `--plan` or the full pipeline: validate → policy scan → firewall → infra → config |
+| `eve-janitor` | Daily cron (ephemeral only) + manual (`workflow_dispatch`) | Manual runs can target ephemeral-only or `full-lab` cleanup; `full-lab` requires typing `DESTROY` to confirm |
 
 ### Deploy Flow
 
+The pipeline has **no webhook or automatic polling** — pulling changes onto the runner is a deliberate manual step, kept that way so nothing touches the physical cluster without a human explicitly deciding it should:
+
 ```
-Local machine  
-│  
-├─ edit lab-state.yaml  
-└─ git push → main  
-│  
-▼  
-eve-sanity-check (automatic)  
-Validates contract & environment  
-│  
-▼ (if passing)  
-SSH into VPS → git pull  
-(updates runner workspace with latest lab-state.yaml)  
-│  
-▼  
-eve-deploy (manual trigger)  
-│  
-┌───────┴────────┐  
-│ │  
---plan --apply  
-(read-only) validate → firewall  
-→ infra → config
+Local machine
+│
+├─ edit lab-state.yaml
+└─ git push → main
+│
+▼
+eve-sanity-check (automatic)
+Unit tests → contract validation → environment checks
+│
+▼ (if passing, manually:)
+SSH into VPS → git pull
+(updates runner workspace with the latest lab-state.yaml)
+│
+▼ (manually trigger via workflow_dispatch, as needed:)
+┌──────────────┬──────────────────┬───────────────────────┐
+│              │                  │                       │
+eve-janitor    validator-only     eve-deploy --plan       eve-deploy --apply
+(ephemeral or  (sanity re-check)  (Terraform plan only,    (full pipeline:
+ full-lab)                         read-only)               validate → policy
+                                                             scan → firewall →
+                                                             infra → config)
 ```
 
-> **Note:** The `git pull` on the VPS is currently a manual step. A natural next improvement would be a webhook or a lightweight watcher that triggers the pull automatically on push to `main`.
-
-### Janitor
-
-Ephemeral resources (`efimero: true`) are automatically destroyed every 24 hours by the janitor cron. Resources marked `core: true` are never touched. For a full lab wipe, trigger manually with `full-lab` scope and confirm with `DESTROY`.
+Independently of any push, `eve-janitor` also runs on a **daily cron**, silently destroying every resource marked `efimero: true` regardless of whether anyone pushed or deployed that day — resources marked `core: true` are always exempt.
 
 ### Secrets
 
-Secrets are encrypted at rest with SOPS + Age and stored as `secrets.enc.yaml` in the repository. The runner decrypts them at runtime using an Age key stored outside the repo at `~/.config/sops/age/keys.txt`.
+Secrets are encrypted at rest with SOPS + Age and stored as `secrets.enc.yaml` in the repository. The runner decrypts them at runtime using an Age key stored outside the repo, at `~/.config/sops/age/keys.txt`. Secrets are explicitly masked (`::add-mask::`) before being written to any CI environment variable, so they never appear in workflow logs — even with debug logging enabled.
+
+## Testing & Policy-as-Code
+
+Before any infrastructure change reaches Proxmox, two independent safety nets run in CI:
+
+| Layer | Tool | What it checks |
+|-------|------|-----------------|
+| **Unit tests** | `pytest` (`tests/test_validator.py`) | Contract validation logic — duplicate detection, quota math, IP range rules |
+| **Firewall template tests** | `pytest` + Jinja2 (`tests/test_firewall_template.py`) | Renders `eve-firewall.j2` directly (no Ansible, no Docker) and asserts every `firewall_externo` port generates its exact `ACCEPT` rule, undeclared ports never do, and the default-`DROP` catch-all always comes last |
+| **Policy scan** | Checkov custom check `CKV_EVE_1` | Fails the pipeline if any `proxmox_lxc`/`proxmox_vm_qemu` resource ever enables per-host firewalling — the real regression to guard against, since EVE's firewall model is intentionally centralized on the gateway |
+
+Both test layers run inside a project-local virtual environment (`ensure_venv()` in `orchestrator.sh`), avoiding conflicts with system Python on modern Debian/Ubuntu/Fedora runners.
 
 ## Access Layer
 
@@ -95,28 +124,33 @@ Remote access to the cluster is handled through two complementary methods, with 
 
 ### ZeroTier (Primary)
 
-ZeroTier provides an encrypted overlay network connecting the VPS runner, `doom-gateway`, and both Proxmox nodes. This is the primary out-of-band access path — if the cluster is unreachable over the LAN, ZeroTier is the fallback.
+ZeroTier provides an encrypted overlay network connecting the VPS runner, `doom-gateway`, and both Proxmox nodes. This is the primary access path for the GitHub Actions runner and for day-to-day administration.
 
 ### WireGuard (Secondary)
 
-A manually configured WireGuard VPN (`wg0`) on `doom-gateway` provides an alternative access path. Used for direct LAN access when ZeroTier is unavailable or for lower-latency connections from trusted devices.
+A manually configured WireGuard VPN (`wg0`) on `doom-gateway` provides a backup SSH-only path directly to the gateway — used if ZeroTier is unavailable. It is intentionally not wired into the GUI/HAProxy path.
+
+### HAProxy — Active-Backup
+
+`doom-gateway` runs HAProxy in pure TCP (L4 passthrough) mode, so Proxmox's native TLS is never terminated early. It load-balances the Proxmox GUI/API between the two cluster nodes in an active-backup configuration — `makima` primary, `reze` as automatic failover — so the cluster's web interface stays reachable even if the primary node goes down.
 
 ### Previous Setup — Cloudflare Zero Trust
 
-The cluster was previously exposed via a Cloudflare Zero Trust tunnel at `eve.hackedagain.lol`. The tunnel ran on the DigitalOcean VPS and connected directly to `doom-gateway` via ZeroTier, providing authenticated HTTPS access to internal services without opening any inbound ports.
+The cluster was previously exposed via a Cloudflare Zero Trust tunnel at `eve.<domain>`. The tunnel ran on the DigitalOcean VPS and connected directly to `doom-gateway` via ZeroTier, providing authenticated HTTPS access to internal services without opening any inbound ports. A path-scoped bypass policy (`/api2`) allowed Proxmox's console WebSocket traffic through without breaking Cloudflare Access authentication for the rest of the app — Proxmox's own login remained the real gate for that path.
 
 ```
 Browser → Cloudflare Edge → CF Tunnel (VPS) → ZeroTier → doom-gateway → Proxmox cluster
 ```
 
-The domain is currently inactive (not renewed). The Zero Trust application, tunnel, and DNS records remain configured in Cloudflare — repointing to a new domain requires updating the DNS record and tunnel target only. All infrastructure documentation for this setup is preserved internally.
+The domain is currently inactive (not renewed). The Zero Trust application, tunnel, and DNS-adjacent configuration remain intact on Cloudflare's side — repointing to a new domain only requires updating the hostname and tunnel target. Full internal documentation for this layer, including the debugging history, is preserved in [`docs/engineering-log.md`](docs/engineering-log.md#13-perimeter-access-layer-cloudflare--zerotier--haproxy).
 
 ### Network Summary
 
 | Method | Status | Use case |
 |--------|--------|----------|
 | ZeroTier | ✅ Active | Primary remote access, CI/CD runner connectivity |
-| WireGuard | ✅ Active | Secondary access, trusted devices |
+| WireGuard | ✅ Active | Secondary access, SSH-only backup to the gateway |
+| HAProxy Active-Backup | ✅ Active | Load-balanced access to the Proxmox GUI/API |
 | Cloudflare Zero Trust | ⚠️ Domain inactive | Previously: authenticated public access to internal services |
 
 ## lab-state.yaml Structure
@@ -155,6 +189,9 @@ entornos:
         descripcion: "HTTPS"
 ```
 
+> **Note:** `os:` and `plantilla:` work differently on purpose. `plantilla:` is a direct passthrough — `main.tf` sends the string straight to Proxmox as `clone = each.value.plantilla`, so adding a new VM golden template only requires creating it in Proxmox and referencing its exact name in `lab-state.yaml`, no code changes. `os:` is a logical label (`alpine`/`debian`), not a literal filename — `main.tf` translates it into the real container tarball path (`ostemplate`) via a ternary, and `validator.py`'s `lxc_templates` dict maps the same label to its tarball and minimum disk size. That indirection means adding a third LXC OS option does require editing the ternary in `main.tf`, unlike VM templates.
+
+
 ### Storage Assignment
 
 Storage pool is determined automatically from two fields — `efimero` and `nodo_proxmox`:
@@ -179,8 +216,8 @@ Storage pool is determined automatically from two fields — `efimero` and `nodo
 Before every deploy, `validator.py` checks:
 
 - No duplicate names, VMIDs, or IPs
-- RAM, CPU, and disk quotas not exceeded
-- Ephemeral RAM cap respected (2048MB)
+- RAM, CPU, and disk quotas not exceeded, per node and per storage pool
+- Ephemeral RAM cap respected
 - `eve-monitor` present when any resource has `monitor_enabled: true`
 - Valid storage pools per node
 - IP range compliance
@@ -219,19 +256,21 @@ Required keys:
 
 | Key | Description |
 |-----|-------------|
-| `PM_API_URL` | Proxmox API endpoint |
-| `PM_API_TOKEN_ID` | Proxmox API token ID |
-| `PM_API_TOKEN_SECRET` | Proxmox API token secret |
-| `AWS_ACCESS_KEY_ID` | S3 backend credentials |
-| `AWS_SECRET_ACCESS_KEY` | S3 backend credentials |
-| `AWS_REGION` | S3 bucket region |
-| `TELEGRAM_BOT_TOKEN` | Telegram notifications |
-| `TELEGRAM_CHAT_ID` | Telegram chat target |
+| `pm_api_url` | Proxmox API endpoint |
+| `pm_api_token_id` | Proxmox API token ID |
+| `pm_api_token_secret` | Proxmox API token secret |
+| `aws_access_key_id` | S3 backend credentials |
+| `aws_secret_access_key` | S3 backend credentials |
+| `aws_region` | S3 bucket region |
+| `telegram_bot_token` | Telegram notifications |
+| `telegram_chat_id` | Telegram chat target |
 | `grafana_admin_password` | Grafana admin password |
+
+> Note: these are the exact keys as they appear in `secrets.enc.yaml`. `orchestrator.sh` uppercases them automatically (`k.upper()`) when exporting them as environment variables at runtime — you never need to type them in uppercase yourself.
 
 ### 3. Declare your infrastructure
 
-Edit `lab-state.yaml` and set `estado: presente` on the resources you want deployed. See [lab-state.yaml Structure](#lab-state.yaml-structure) for the full schema.
+Edit `lab-state.yaml` and set `estado: presente` on the resources you want deployed. See [lab-state.yaml Structure](#lab-stateyaml-structure) for the full schema.
 
 ### 4. Deploy
 
@@ -239,17 +278,20 @@ Edit `lab-state.yaml` and set `estado: presente` on the resources you want deplo
 # Dry run — shows what Terraform will create
 ./orchestrator.sh --plan
 
-# Apply — full pipeline: validate → firewall → infra → config
+# Apply — full pipeline: validate → policy scan → firewall → infra → config (default action)
 ./orchestrator.sh --apply
 ```
 
-> **Note:** On the VPS runner, run `git pull` before triggering `eve-deploy` from GitHub Actions to ensure the runner has the latest `lab-state.yaml`.
+> **Note:** On the VPS runner, run `git pull` manually before triggering `eve-deploy` from GitHub Actions to ensure the runner has the latest `lab-state.yaml` — there is no webhook or automatic sync between GitHub and the runner's local checkout.
 
 ### 5. Verify
 
 ```bash
 # Run the validator standalone
 python3 validator.py
+
+# Run the full test suite standalone
+pytest tests/ -v
 
 # Check GitHub Actions for sanity check status
 # Notifications are sent to Telegram on every deploy
@@ -258,40 +300,50 @@ python3 validator.py
 ## Project Layout
 
 ```
-EVE/  
-├── lab-state.yaml # Single source of truth — the only file you edit  
-├── secrets.enc.yaml # SOPS-encrypted secrets (Age)  
-├── orchestrator.sh # Main pipeline entrypoint  
-├── validator.py # Contract enforcement before any deploy  
-├── bootstrap.sh # Command station setup from scratch  
-│  
-├── terraform/  
-│ ├── main.tf # VM and LXC resource definitions  
-│ ├── vars.tf # Input variables  
-│ ├── backend.tf # S3 remote state configuration  
-│ ├── provider.tf # Proxmox and random providers  
-│ └── .terraform.lock.hcl # Provider version lock  
-│  
-├── ansible/  
-│ ├── node-config/  
-│ │ └── setup_base.yml # Base system config for all VMs and LXCs  
-│ ├── sdn-gateway/  
-│ │ ├── deploy-firewall.yml # Generates and applies SDN firewall rules  
-│ │ ├── cleanup-firewall.yml# Purges dynamic rules, preserves core nodes  
-│ │ └── templates/  
-│ │ └── eve-firewall.j2 # iptables script — rendered from lab-state.yaml  
-│ └── monitor/  
-│ ├── setup_monitor.yml # Installs VictoriaMetrics + Grafana  
-│ └── templates/  
-│ ├── scrape.yml.j2 # VictoriaMetrics scrape config  
-│ ├── victoria-metrics-opts.j2 # Service options  
-│ └── dashboard-provider.yml.j2  
-│  
-└── .github/  
-└── workflows/  
-├── eve-sanity-check.yml # Runs on every push to main  
-├── eve-deploy.yml # Manual deploy trigger  
-└── eve-janitor.yml # Daily ephemeral cleanup
+EVE/
+├── lab-state.yaml              # Single source of truth — the only file you edit
+├── secrets.enc.yaml            # SOPS-encrypted secrets (Age)
+├── orchestrator.sh             # Main pipeline entrypoint
+├── validator.py                # Contract enforcement before any deploy
+├── bootstrap.sh                # Command station setup from scratch
+│
+├── docs/
+│   └── engineering-log.md      # Deep-dive: incidents, bugs, fixes, stress-test methodology
+│
+├── tests/
+│   ├── test_validator.py       # Unit tests for validator.py
+│   └── test_firewall_template.py # Jinja2 render tests for the SDN firewall
+│
+├── custom_checks/
+│   └── CKV_EVE_1_no_host_firewall.py  # Checkov policy-as-code guardrail
+│
+├── terraform/
+│   ├── main.tf                 # VM and LXC resource definitions
+│   ├── vars.tf                 # Input variables
+│   ├── backend.tf              # S3 remote state configuration (native locking)
+│   ├── provider.tf             # Proxmox and random providers
+│   └── .terraform.lock.hcl     # Provider version lock
+│
+├── ansible/
+│   ├── node-config/
+│   │   └── setup_base.yml      # Base system config for all VMs and LXCs
+│   ├── sdn-gateway/
+│   │   ├── deploy-firewall.yml # Generates and applies SDN firewall rules
+│   │   ├── cleanup-firewall.yml# Purges dynamic rules, preserves core nodes
+│   │   └── templates/
+│   │       └── eve-firewall.j2 # iptables script — rendered from lab-state.yaml
+│   └── monitor/
+│       ├── setup_monitor.yml   # Installs VictoriaMetrics + Grafana
+│       └── templates/
+│           ├── scrape.yml.j2
+│           ├── victoria-metrics-opts.j2
+│           └── dashboard-provider.yml.j2
+│
+└── .github/
+    └── workflows/
+        ├── eve-sanity-check.yml # Runs on every push to main
+        ├── eve-deploy.yml       # Manual deploy trigger (plan or apply)
+        └── eve-janitor.yml      # Daily ephemeral cleanup + manual trigger
 ```
 
 ## Monitoring
@@ -308,7 +360,7 @@ The validator rejects any configuration where `monitor_enabled: true` exists on 
 | Component | Role |
 |-----------|------|
 | **Node Exporter** | Installed on each monitored VM/LXC — exposes CPU, memory, disk, and network metrics |
-| **VictoriaMetrics** | Lightweight Prometheus-compatible TSDB — scrapes all Node Exporters |
+| **VictoriaMetrics** | Lightweight Prometheus-compatible TSDB — scrapes all Node Exporters, auto-discovered from `lab-state.yaml` |
 | **Grafana** | Visualization — pre-provisioned with a Node Exporter dashboard |
 
 All three are deployed automatically by `ansible/monitor/setup_monitor.yml` when `eve-monitor` is present.
@@ -340,7 +392,7 @@ Template names are case-sensitive and must include no trailing whitespace.
 
 ### Ansible — Python not found on Alpine LXC
 
-The `setup_base.yml` bootstrap task installs Python via `raw` before gathering facts. If it still fails, verify the Alpine template has network access at provision time:
+The `setup_base.yml` bootstrap task installs Python via `raw` before gathering facts, with retries. If it still fails, verify the Alpine template has network access at provision time:
 
 ```bash
 # From doom-gateway
@@ -360,7 +412,7 @@ zerotier-cli listnetworks
 # https://my.zerotier.com
 ```
 
-Ensure `doom-gateway` has IP forwarding enabled and `iptables` is not dropping ZeroTier-sourced packets.
+Ensure `doom-gateway` has IP forwarding enabled and that its `FORWARD` chain explicitly accepts new outbound connections from the LAN — a missing rule here can silently block all outbound traffic while leaving ICMP working, which is easy to misdiagnose as a DNS or MTU issue.
 
 ### SOPS decryption fails on runner
 
@@ -377,15 +429,18 @@ If the environment variable is missing, add it to `~/.bashrc` and re-source:
 export SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt"
 ```
 
+## Engineering Deep Dive
+
+This README covers the system as it stands. For the full debugging history — including a 3-day cascading-failure investigation while rebuilding the lab from scratch, a CI-vs-local network topology mismatch, a silent firewall bug that blocked all outbound traffic, and the stress-testing methodology used to validate the contract validator — see [`docs/engineering-log.md`](docs/engineering-log.md).
+
 ## Physical Topology
 
-| Node | Role | CPU | RAM | Storage |
-|------|------|-----|-----|---------|
-| `makima` | Proxmox primary | 6 vCPU | 6GB | 100GB SSD (`local-zfs`) · 850GB HDD (`hdd_data`) |
-| `reze` | Proxmox secondary | 5 vCPU | 2GB | 850GB HDD (`local-zfs`) |
-| `doom-gateway` | Raspberry Pi 4 | 4 core | 4GB | 32GB SD |
+| Node | Hardware | Role | Storage |
+|------|----------|------|---------|
+| `reze` (Dell) | Intel i7, 8 cores @ 2.10GHz, 8GB RAM | Proxmox node, HAProxy failover target | 1TB HDD (`local-zfs`) |
+| `makima` (Lenovo) | Intel i3, 4 cores @ 1.20GHz, 8GB RAM | Proxmox node, HAProxy primary target | 128GB NVMe (`local-zfs`) + 1TB HDD (`hdd_data`) |
+| `doom-gateway` | Raspberry Pi 4 Model B, 4 cores @ 1.80GHz, 8GB RAM | Perimeter gateway, quorum QDevice, SDN firewall | 32GB microSD |
 
 ## License
 
 MIT
-
