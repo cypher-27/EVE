@@ -160,6 +160,14 @@ Incremental iteration (v1.0 → v2.3) deliberately injecting errors one at a tim
 
 A Node Exporter package-name bug was suspected in Alpine after observing a hang. A later run proved the command was correct and the hang was a transient event (I/O contention in `apk`'s solver). **No change was applied** — an explicitly documented example of not modifying working code without solid evidence.
 
+### 4.7 Terraform's remote-exec provisioner blocked by the SDN firewall itself
+
+**Symptom:** during a full-cycle stress test with 10 non-core resources, 8 of them failed with `remote-exec provisioner error / dial tcp <ip>:22: i/o timeout`, while 2 succeeded.
+
+**Root cause:** not a bug — the 2 resources that succeeded were the only 2 that had explicitly declared `puerto: 22` in `firewall_externo`. The SDN firewall on `doom-gateway` governs all forwarded traffic into the LAN, including from the command station/CI runner running Terraform itself — there is no implicit allowance for the provisioning tool. Confirmed as the deny-by-default model working exactly as designed, just not accounted for in the manifest.
+
+**Fix:** no code change. Every VM/LXC that needs Terraform's `remote-exec` to confirm SSH readiness must declare `puerto: 22` (`tcp`) in `firewall_externo` — now a documented schema requirement in the README.
+
 ---
 
 *For the current production architecture, CI/CD pipeline, and quick start instructions, see the main [README](../README.md).*

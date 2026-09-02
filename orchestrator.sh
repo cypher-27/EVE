@@ -95,7 +95,10 @@ handle_error() {
     echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${YELLOW}${detail}${NC}"
     echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    send_telegram "❌ *CRITICAL ERROR* at stage: \`${step}\`\n\n\`\`\`${detail}\`\`\`"
+    local detail_truncated
+    detail_truncated="$(printf '%s' "$detail" | tail -c 3000)"
+
+    send_telegram "❌ *CRITICAL ERROR* at stage: \`${step}\`\n\n\`\`\`${detail_truncated}\`\`\`"
     exit 1
 }
 

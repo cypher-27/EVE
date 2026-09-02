@@ -189,6 +189,8 @@ entornos:
         descripcion: "HTTPS"
 ```
 
+> **Note:** any VM/LXC that relies on Terraform's `remote-exec` provisioner to confirm SSH readiness must declare `puerto: 22` (`tcp`) in `firewall_externo`. The SDN firewall on `doom-gateway` is deny-by-default for all forwarded traffic into the LAN — including from the command station or CI runner provisioning the resource. There is no implicit bypass for the tooling itself.
+
 > **Note:** `os:` and `plantilla:` work differently on purpose. `plantilla:` is a direct passthrough — `main.tf` sends the string straight to Proxmox as `clone = each.value.plantilla`, so adding a new VM golden template only requires creating it in Proxmox and referencing its exact name in `lab-state.yaml`, no code changes. `os:` is a logical label (`alpine`/`debian`), not a literal filename — `main.tf` translates it into the real container tarball path (`ostemplate`) via a ternary, and `validator.py`'s `lxc_templates` dict maps the same label to its tarball and minimum disk size. That indirection means adding a third LXC OS option does require editing the ternary in `main.tf`, unlike VM templates.
 
 
