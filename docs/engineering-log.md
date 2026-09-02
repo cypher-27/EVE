@@ -70,7 +70,7 @@ Verified with thorough real evidence (not just logs): external nmap showed `filt
 - Multimodal VM/LXC support, Debian + Alpine.
 - Remote Terraform backend on S3, with locking **migrated from DynamoDB to native S3 locking** (`use_lockfile`), validated with real concurrency tests; legacy infrastructure decommissioned.
 - `validator.py` evolved into a robust guardrail: CPU/RAM/disk quotas per node and pool, IP/VMID uniqueness, valid IP ranges, monitoring dependency checks, reduced RAM quota for ephemeral environments.
-- `orchestrator.sh`: staged execution, automatic secrets loading via SOPS, Telegram notifications, interrupt handling (`trap`), `--plan`/`--apply`/`--destroy`/`--force` flags.
+- `orchestrator.sh`: staged execution, automatic secrets loading via SOPS, Telegram notifications, interrupt handling (`trap`), `--plan`/`--apply`/`--destroy`/`--force` flags, capped Terraform parallelism to respect the cluster's real capacity.
 - Real CI/CD on GitHub Actions with a dedicated self-hosted runner (`runner` user, not root) on the VPS: sanity-check, deploy, and a **Janitor** (scheduled automatic cleanup).
 - `pytest` suite (36 cases) — fixed to actually run in CI (the orchestrator previously called the validator directly, bypassing pytest).
 - **Policy-as-code**: `CKV_EVE_1` (Checkov, blocks any resource that enables per-host firewalling) + a Jinja2 rendering test for the firewall template (a lightweight substitute for Molecule).
@@ -92,6 +92,7 @@ Verified with thorough real evidence (not just logs): external nmap showed `filt
 | Checkov rule on `network.firewall = false` | Always triggered (correct behavior in 100% of cases), no real value | `CKV_EVE_1`: blocks the actual regression (enabling per-host firewalling) |
 | `wait_for_connection` (Ansible) to wait for Alpine hosts to become available | Circular dependency: requires Python, which wasn't installed yet | `raw: echo ready` check with retries |
 | `failed_when: false` in the Alpine Python bootstrap | Masked real network/installation failures | Real retries with explicit success verification |
+| Terraform's default apply parallelism (10) | Overwhelmed `pveproxy` on a 2-node, 8GB-per-node cluster under a full 10-resource stress test | Capped `-parallelism` in `orchestrator.sh`, tuned empirically against real cluster behavior |
 
 ---
 
@@ -109,6 +110,7 @@ Verified with thorough real evidence (not just logs): external nmap showed `filt
 - **Aggregate (non fail-fast) validator mode** — proposed to reduce debugging iterations, no confirmation of final implementation.
 - **SIEM or event correlation/detection layer** — considered as a natural evolution of the SDN firewall, discarded due to real hardware resource constraints on the cluster.
 - **Refactoring the orchestrator into fine-grained subcommands for GitHub Actions** — explicitly discarded due to low return relative to the project's imminent closure.
+- **Reducing redundant Terraform "update VM" calls on unchanged resources** — the Telmate provider re-sends a full config update (including deleting unset legacy attributes like `cpuunits`/`cipassword`/`shares`) on every `apply`, even when nothing changed. Adds avoidable API load on an already capacity-constrained cluster; not investigated further given the project's closure.
 
 ---
 
@@ -167,6 +169,16 @@ A Node Exporter package-name bug was suspected in Alpine after observing a hang.
 **Root cause:** not a bug — the 2 resources that succeeded were the only 2 that had explicitly declared `puerto: 22` in `firewall_externo`. The SDN firewall on `doom-gateway` governs all forwarded traffic into the LAN, including from the command station/CI runner running Terraform itself — there is no implicit allowance for the provisioning tool. Confirmed as the deny-by-default model working exactly as designed, just not accounted for in the manifest.
 
 **Fix:** no code change. Every VM/LXC that needs Terraform's `remote-exec` to confirm SSH readiness must declare `puerto: 22` (`tcp`) in `firewall_externo` — now a documented schema requirement in the README.
+
+### 4.8 `pveproxy`'s own watchdog killing the API mid-deploy under stress-test load
+
+**Symptom:** immediately after a full `janitor` cleanup, re-running a full 10-resource `terraform apply` failed with `Error: error creating LXC container: 595 Connection refused` on 6 of the 10 resources — a transport-level error, distinct from the timeout/EOF errors seen earlier in the same test cycle.
+
+**Investigation:** `journalctl -u pveproxy -u pvedaemon` on both nodes showed `pveproxy-watchdog: pveproxy not responding, restarting...` on **both** `makima` and `reze`, twice within 5 minutes, timestamped exactly inside the failure window. No `apt`/`logrotate`/`pve-daily-update` timer was scheduled anywhere near that time on either node — ruled out as a coincidence with scheduled maintenance.
+
+**Root cause:** Proxmox's own internal watchdog restarted `pveproxy` on both nodes because the sustained concurrent load from the stress test (VM cloning, disk resizing, CT/VM starts, and — separately — the Telmate provider re-sending a full config `update` on every apply, even for unchanged VMs) made `pveproxy` stop responding to its own health checks. Any Terraform API call landing in the brief window while `pveproxy` was being killed and restarted got `Connection refused`. `-parallelism=3` (already reduced from Terraform's default of 10 after an earlier incident in the same test cycle) was still not conservative enough for this specific combination of operations on an 8GB-per-node cluster.
+
+**Fix:** further reduced Terraform's apply parallelism in `orchestrator.sh` (`-parallelism=2`), tuned empirically against the cluster's real observed ceiling rather than a guessed value. Retrying the same apply after the parallelism change succeeded cleanly.
 
 ---
 
