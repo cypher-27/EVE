@@ -22,6 +22,7 @@
         groups:
           - "eve_dynamic_nodes"
           - "type_{{ item.tipo | default('vm') }}"
+          - "os_{{ item.os | default('none') }}"
         ansible_host: "{{ item.red.ip.split('/')[0] }}"
         # If it's a VM use 'admin', if it's an LXC use 'root'
         ansible_user: "{{ 'admin' if (item.tipo | default('vm')) == 'vm' else 'root' }}"
@@ -65,6 +66,7 @@
       changed_when: "'Installing' in bootstrap_result.stdout"
       when:
         - "'type_lxc' in group_names"
+        - "'os_alpine' in group_names"
 
     - name: "Gather Facts now that Python exists"
       ansible.builtin.setup:
