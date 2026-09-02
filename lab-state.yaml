@@ -1,18 +1,24 @@
 # ==========================================
-# EVE - SINGLE SOURCE OF TRUTH (v2.0)
+# EVE - SINGLE SOURCE OF TRUTH
 # ==========================================
 
-# NOTA: `firewall_externo` NO genera recursos de Terraform por host.
-# Se aplica de forma centralizada vía SDN en doom-gateway
-# (ver ansible/sdn-gateway/deploy-firewall.yml + templates/eve-firewall.j2).
-# `terraform plan` mostrará siempre network { firewall = false } en cada
-# VM/LXC — es el comportamiento esperado, no un bug.
+# NOTE: `firewall_externo` does NOT generate per-host Terraform resources.
+# It's applied centrally via SDN on doom-gateway
+# (see ansible/sdn-gateway/deploy-firewall.yml + templates/eve-firewall.j2).
+# `terraform plan` will always show network { firewall = false } on every
+# VM/LXC — that's expected behavior, not a bug.
+
+# NOTE: any VM/LXC that needs Terraform's remote-exec provisioner to
+# confirm SSH readiness MUST declare puerto: 22 (tcp) in firewall_externo.
+# The SDN firewall is deny-by-default for all forwarded traffic into the
+# LAN, including from the command station/CI runner running Terraform —
+# there is no implicit bypass for the provisioning tool itself.
 
 entornos:
 
-  # === INFRAESTRUCTURA CORE ===
-  # Estos recursos son físicos o permanentes.
-  # El validator y el janitor nunca los tocan.
+  # === CORE INFRASTRUCTURE ===
+  # These resources are physical or permanent.
+  # The validator and the janitor never touch them.
 
   - nombre: "doom-gateway"
     estado: "presente"
@@ -20,7 +26,7 @@ entornos:
     core: true
     red:
       ip: "192.168.1.30/24"
-      management_ip: "10.1.1.1"   # IP de ZeroTier, usada en CI/GitHub Actions
+      management_ip: "10.1.1.1"   # ZeroTier IP, used in CI/GitHub Actions
 
   - nombre: "makima-core"
     estado: "presente"
@@ -44,8 +50,8 @@ entornos:
         protocolo: "tcp"
         descripcion: "Proxmox GUI"
 
-  # === MONITOREO ===
-  # VictoriaMetrics + Grafana. Cambia estado a 'presente' para activarlo.
+  # === MONITORING ===
+  # VictoriaMetrics + Grafana. Set estado to 'presente' to activate it.
 
   - nombre: "eve-monitor"
     estado: "presente"
@@ -78,9 +84,9 @@ entornos:
         protocolo: "tcp"
         descripcion: "VictoriaMetrics"
 
-  # === TEMPLATES DE REFERENCIA ===
-  # Ejemplos de cómo declarar una VM y un LXC.
-  # Cambia estado a 'presente' y ajusta los valores para desplegar.
+  # === REFERENCE TEMPLATES ===
+  # Examples of how to declare a VM and an LXC.
+  # Set estado to 'presente' and adjust the values to deploy.
 
   - nombre: "eve-lab-vm"
     estado: "presente"
@@ -123,4 +129,3 @@ entornos:
       - puerto: 22
         protocolo: "tcp"
         descripcion: "SSH Admin"
-
