@@ -180,6 +180,29 @@ A Node Exporter package-name bug was suspected in Alpine after observing a hang.
 
 **Fix:** further reduced Terraform's apply parallelism in `orchestrator.sh` (`-parallelism=2`), tuned empirically against the cluster's real observed ceiling rather than a guessed value. Retrying the same apply after the parallelism change succeeded cleanly.
 
+### 4.9 A fourth, undocumented self-healing layer: `pveproxy-watchdog.sh`
+
+**Symptom:** `Connection refused` errors on `terraform apply` persisted even after capping parallelism to 2, with no correlation to actual cluster load — `pveproxy`/`pvedaemon` showed clean `Stopping → Stopped → Starting → Started` cycles (not crashes, not the Proxmox-native watchdog) on both nodes, synchronized to nearly the same second, every 5 minutes.
+
+**Investigation:** `journalctl -u pveproxy` (filtered to the systemd unit) showed nothing explaining the restarts, because the actual trigger logs under a different syslog identifier entirely. `crontab -l -u root` revealed a previously undocumented script on both nodes:
+
+```
+*/5 * * * * /usr/local/bin/pveproxy-watchdog.sh
+```
+
+```bash
+RESPONSE=$(curl -sk --max-time 5 https://127.0.0.1:8006/api2/json/version)
+if ! echo "$RESPONSE" | grep -q "version"; then
+    systemctl restart pvedaemon
+    systemctl restart pveproxy
+fi
+```
+
+**Root cause:** a fourth self-healing layer, separate from the three already documented in 1.2 and 1.5 (Grafana/VictoriaMetrics for ephemeral resources, `notify.sh` on the Raspberry Pi for physical infra), installed on `makima` and `reze` directly at some undetermined earlier point in the project — likely during one of the cascading-failure debugging sessions in 4.4 — and never carried into this document's architecture inventory. Its 5-second health-check timeout was too aggressive for the sustained API load of a full-cycle `terraform apply`: legitimate slowness under load was misread as `pveproxy` being down, triggering a restart that then caused real `Connection refused` errors for Terraform's in-flight requests — a self-inflicted failure loop.
+
+**Fix:** increased the health-check timeout (`--max-time 5` → `20`) and added a second confirmation check 5 seconds later before restarting, so a single slow response under real load no longer triggers an unnecessary restart, while a genuine outage is still caught and healed within ~30 seconds.
+
+
 ---
 
 *For the current production architecture, CI/CD pipeline, and quick start instructions, see the main [README](../README.md).*
