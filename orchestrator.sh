@@ -295,7 +295,7 @@ stage_infra() {
     send_telegram "🚀 Starting infrastructure deployment (env: \`${TF_VAR_eve_env}\`)..."
     cd "$SCRIPT_DIR/terraform" || handle_error "Navigation" "Cannot access terraform/ directory"
     local tf_out
-    tf_out=$(terraform apply -auto-approve 2>&1) || {
+    tf_out=$(terraform apply -auto-approve -parallelism=3 2>&1) || {
         echo "$tf_out" | grep -q "Error acquiring the state lock" \
             && handle_error "Terraform Lock" "State locked by another process. Release the lock manually." \
             || handle_error "Terraform Apply" "$tf_out"
