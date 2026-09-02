@@ -103,10 +103,9 @@ jobs:
           chmod +x orchestrator.sh
           while IFS= read -r target || [ -n "$target" ]; do
             echo "[*] Destroying: $target"
-            OUTPUT=$(./orchestrator.sh --destroy-target "$target" 2>&1)
-            EXIT_CODE=$?
-            echo "$OUTPUT"
-            if [ $EXIT_CODE -ne 0 ]; then
+            if ! OUTPUT=$(./orchestrator.sh --destroy-target "$target" 2>&1); then
+              EXIT_CODE=$?
+              echo "$OUTPUT"
               if echo "$OUTPUT" | grep -qE "no route to host|dial tcp.*connect:|i/o timeout|connection refused"; then
                 echo "[!] Connectivity-related failure detected for $target"
                 echo "connectivity_failure=true" >> $GITHUB_ENV
@@ -116,6 +115,7 @@ jobs:
               echo "failed_target=$target" >> $GITHUB_ENV
               exit $EXIT_CODE
             fi
+            echo "$OUTPUT"
           done < janitor-targets.txt
         env:
           TF_VAR_eve_env: "main"
