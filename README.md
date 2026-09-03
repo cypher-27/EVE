@@ -4,8 +4,7 @@
 [![Terraform](https://img.shields.io/badge/IaC-Terraform-844FBA)]()
 [![Ansible](https://img.shields.io/badge/Config-Ansible-EE0000)]()
 [![Secrets](https://img.shields.io/badge/Secrets-SOPS%20%2B%20Age-2E8B57)]()
-<!-- Once the repo is public and the workflow has run at least once, replace <your-user> below to enable a live CI badge:
-[![CI](https://github.com/<your-user>/EVE/actions/workflows/eve-sanity-check.yml/badge.svg)](https://github.com/<your-user>/EVE/actions) -->
+[![CI](https://github.com/cypher-27/EVE/actions/workflows/eve-sanity-check.yml/badge.svg)](https://github.com/cypher-27/EVE/actions)
 
 A declarative homelab automation pipeline that provisions and manages virtual machines and LXC containers on a Proxmox cluster, driven entirely by a single source-of-truth YAML manifest — with full CI/CD, encrypted secrets, a dynamic SDN firewall, policy-as-code guardrails, and automated monitoring.
 
@@ -18,6 +17,23 @@ A declarative homelab automation pipeline that provisions and manages virtual ma
 - **Zero Trust access history**: previously exposed via a Cloudflare Zero Trust tunnel with path-scoped bypass policies for WebSocket console traffic — full design preserved even though the demo domain is currently inactive.
 - **Resource-aware by necessity**: built and stress-tested on a genuinely constrained cluster, forcing real engineering trade-offs (Alpine over Debian where possible, VictoriaMetrics over Prometheus, HDD-offload for ephemeral workloads).
 - **Validated, not just built**: drift-resilience and firewall-isolation behavior were verified with real network evidence (`nmap`, `iptables`, `tcpdump`), not just code review.
+
+## Contents
+
+- [Highlights](#highlights)
+- [What is EVE](#what-is-eve)
+- [Architecture](#architecture)
+- [CI/CD Pipeline](#cicd-pipeline)
+- [Testing & Policy-as-Code](#testing--policy-as-code)
+- [Access Layer](#access-layer)
+- [lab-state.yaml Structure](#lab-stateyaml-structure)
+- [Quick Start](#quick-start)
+- [Project Layout](#project-layout)
+- [Monitoring](#monitoring)
+- [Troubleshooting](#troubleshooting)
+- [Engineering Deep Dive](#engineering-deep-dive)
+- [Physical Topology](#physical-topology)
+- [License](#license)
 
 ## What is EVE
 
@@ -102,6 +118,8 @@ eve-janitor    validator-only     eve-deploy --plan       eve-deploy --apply
 
 Independently of any push, `eve-janitor` also runs on a **daily cron**, silently destroying every resource marked `efimero: true` regardless of whether anyone pushed or deployed that day — resources marked `core: true` are always exempt.
 
+> **Design Note:** In an enterprise environment, this human-in-the-loop gate would typically be implemented using **GitHub Actions Environments** with required reviewer approvals or protected promotion branches. For this homelab, the deliberate manual pull on the VPS serves as a zero-cost physical air-gap to ensure zero unmonitored execution against bare-metal hardware.
+
 ### Secrets
 
 Secrets are encrypted at rest with SOPS + Age and stored as `secrets.enc.yaml` in the repository. The runner decrypts them at runtime using an Age key stored outside the repo, at `~/.config/sops/age/keys.txt`. Secrets are explicitly masked (`::add-mask::`) before being written to any CI environment variable, so they never appear in workflow logs — even with debug logging enabled.
@@ -181,7 +199,7 @@ entornos:
 
     red:
       ip: 192.168.1.45/24
-      gateway: 192.168.1.1
+      gateway: 192.168.1.30
 
     firewall_externo:        # Ports forwarded by doom-gateway SDN firewall
       - puerto: 443
@@ -442,6 +460,8 @@ This README covers the system as it stands. For the full debugging history — i
 | `reze` (Dell) | Intel i7, 8 cores @ 2.10GHz, 8GB RAM | Proxmox node, HAProxy failover target | 1TB HDD (`local-zfs`) |
 | `makima` (Lenovo) | Intel i3, 4 cores @ 1.20GHz, 8GB RAM | Proxmox node, HAProxy primary target | 128GB NVMe (`local-zfs`) + 1TB HDD (`hdd_data`) |
 | `doom-gateway` | Raspberry Pi 4 Model B, 4 cores @ 1.80GHz, 8GB RAM | Perimeter gateway, quorum QDevice, SDN firewall | 32GB microSD |
+
+> **Note:** the enforced RAM/CPU quota (`LIMITS` in `validator.py`) is intentionally set below total physical capacity — roughly half of the combined 16GB across `makima` and `reze` — to leave headroom for the Proxmox host processes themselves and for the ephemeral-resource sub-budget, not because the hardware can't technically hold more.
 
 ## License
 

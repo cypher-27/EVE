@@ -111,6 +111,7 @@ Verified with thorough real evidence (not just logs): external nmap showed `filt
 - **SIEM or event correlation/detection layer** — considered as a natural evolution of the SDN firewall, discarded due to real hardware resource constraints on the cluster.
 - **Refactoring the orchestrator into fine-grained subcommands for GitHub Actions** — explicitly discarded due to low return relative to the project's imminent closure.
 - **Reducing redundant Terraform "update VM" calls on unchanged resources** — the Telmate provider re-sends a full config update (including deleting unset legacy attributes like `cpuunits`/`cipassword`/`shares`) on every `apply`, even when nothing changed. Adds avoidable API load on an already capacity-constrained cluster; not investigated further given the project's closure.
+- **Raspberry Pi storage durability (microSD wear):** Running the SDN gateway, active iptables state, and cluster QDevice directly on a 32GB consumer microSD card was accepted as an operational risk for the duration of the project. Hardening the Pi against flash write exhaustion via `log2ram` (RAM-buffered logging) or migrating the root partition to an external USB 3.0 SSD was evaluated but deferred as out of scope.
 
 ---
 
@@ -140,7 +141,7 @@ This section gathers the most valuable debugging findings of the project — too
 
 Workflows decrypted `secrets.enc.yaml` with SOPS and wrote raw values to `$GITHUB_ENV` without going through GitHub's native `secrets.*` context. Since those values were never registered with the log redaction engine, manually enabling "Re-run with debug logging" exposed the Proxmox token, AWS keys, Telegram token, and Grafana password in plaintext. Fix: `::add-mask::` immediately after decrypting each secret.
 
-**Remediation:** AWS credentials were rotated after confirming exposure in retained workflow logs; Age, Telegram, and SSH credentials were assessed as not retrievable from any surviving log and were left unrotated.
+**Remediation:** AWS credentials were rotated after confirming exposure in retained workflow logs. Age, Telegram, and SSH credentials were assessed as an accepted residual risk rather than rotated, based on: (1) the repository was never public before this audit, ruling out prior indexing by search engines, archives, or scrapers; (2) a full-history `gitleaks` scan found no plaintext secrets in any commit; (3) secrets at rest are SOPS/Age-encrypted ciphertext — safe to be public as long as the private Age key itself was never committed, which was confirmed; (4) the one confirmed leak vector (plaintext values in CI debug logs) was closed with `::add-mask::` and the affected historical logs were purged; (5) the cluster is reachable only via a private ZeroTier network, with no public route to exploit any credential even if compromised. This residual risk retires entirely with the planned physical cluster teardown.
 
 ### 4.4 Cascading failures rebuilding the lab from scratch (3 days of debugging)
 
